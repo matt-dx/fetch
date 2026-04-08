@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fetcher.Cli/Fetcher.Cli.csproj" />
+    <Project Path="src/Fetcher.Core/Fetcher.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Fetcher.Cli.Tests/Fetcher.Cli.Tests.csproj" />
+    <Project Path="tests/Fetcher.Core.Tests/Fetcher.Core.Tests.csproj" />
+  </Folder>
+</Solution>
