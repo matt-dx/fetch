@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using Fetcher.Core.Configuration;
 using Fetcher.Core.Exceptions;
 using Fetcher.Core.Models;
@@ -75,25 +76,40 @@ public sealed class DownloadOrchestrator
                     progress?.ReportChunkCompleted(chunk.Index);
             }
 
+            // Seed assembly progress: chunks whose temp files are already gone were assembled previously
+            foreach (var chunk in manifest.Chunks.Where(c => c.IsComplete && !File.Exists(c.TempFilePath)))
+                progress?.ReportChunkAssembled(chunk.Index);
+
+            // 6. Download (and optionally assemble concurrently)
             progress?.ReportPhaseChanged(DownloadPhase.Downloading);
             var downloadStopwatch = Stopwatch.StartNew();
 
-            await DownloadChunksAsync(manifest, progress, ct);
+            if (_options.WaitForDownload)
+            {
+                await DownloadChunksAsync(manifest, progress, ct);
+                downloadDuration = downloadStopwatch.Elapsed;
 
-            downloadDuration = downloadStopwatch.Elapsed;
+                // Save manifest before batch assembly
+                await manifest.SaveAsync(manifestPath, ct);
 
-            // 6. Save manifest before assembly (for resume if assembly fails)
-            await manifest.SaveAsync(manifestPath, ct);
+                // Batch assemble
+                progress?.ReportPhaseChanged(DownloadPhase.Assembling);
+                var assemblyStopwatch = Stopwatch.StartNew();
+                await _fileAssembler.AssembleAsync(outputPath, manifest, ct);
+                assemblyDuration = assemblyStopwatch.Elapsed;
+            }
+            else
+            {
+                await DownloadAndAssembleAsync(manifest, outputPath, progress, ct);
+                downloadDuration = downloadStopwatch.Elapsed;
+                // Assembly happened concurrently; its time is included in downloadDuration
+                assemblyDuration = TimeSpan.Zero;
 
-            // 7. Assemble
-            progress?.ReportPhaseChanged(DownloadPhase.Assembling);
-            var assemblyStopwatch = Stopwatch.StartNew();
+                // Save manifest (will be deleted shortly on success)
+                await manifest.SaveAsync(manifestPath, ct);
+            }
 
-            await _fileAssembler.AssembleAsync(outputPath, manifest, ct);
-
-            assemblyDuration = assemblyStopwatch.Elapsed;
-
-            // 8. Validate
+            // 7. Validate
             if (metadata.ContentHash.Length > 0)
             {
                 progress?.ReportPhaseChanged(DownloadPhase.Validating);
@@ -106,11 +122,11 @@ public sealed class DownloadOrchestrator
                 {
                     throw new IntegrityException(
                         metadata.ContentHash,
-                        []);  // Actual hash not available here; validator returns bool
+                        []);
                 }
             }
 
-            // 9. Cleanup manifest on success
+            // 8. Cleanup manifest on success
             if (File.Exists(manifestPath))
                 File.Delete(manifestPath);
 
@@ -159,6 +175,97 @@ public sealed class DownloadOrchestrator
         }
     }
 
+    /// <summary>
+    /// Download chunks in parallel and assemble each one as soon as it finishes,
+    /// using a Channel as a producer-consumer queue.
+    /// </summary>
+    private async Task DownloadAndAssembleAsync(
+        DownloadManifest manifest, string outputPath,
+        IDownloadProgress? progress, CancellationToken ct)
+    {
+        var incompleteChunks = manifest.Chunks.Where(c => !c.IsComplete).ToList();
+
+        // Open the output file for streaming assembly
+        using var session = _fileAssembler.BeginAssembly(outputPath, manifest.TotalSize);
+
+        // First, assemble any chunks that were downloaded but not yet assembled (resume case)
+        var downloadedButNotAssembled = manifest.Chunks
+            .Where(c => c.IsComplete && File.Exists(c.TempFilePath))
+            .ToList();
+
+        foreach (var chunk in downloadedButNotAssembled)
+        {
+            await session.WriteChunkAsync(chunk, ct);
+            progress?.ReportChunkAssembled(chunk.Index);
+        }
+
+        if (incompleteChunks.Count == 0)
+            return;
+
+        // Channel for completed chunks awaiting assembly
+        var assemblyQueue = Channel.CreateUnbounded<ChunkState>(
+            new UnboundedChannelOptions { SingleReader = true });
+
+        // Assembly consumer task
+        var assemblyTask = Task.Run(async () =>
+        {
+            await foreach (var chunk in assemblyQueue.Reader.ReadAllAsync(ct))
+            {
+                await session.WriteChunkAsync(chunk, ct);
+                progress?.ReportChunkAssembled(chunk.Index);
+            }
+        }, ct);
+
+        // Download producer tasks
+        using var semaphore = new SemaphoreSlim(_options.MaxConcurrency);
+
+        var downloadTasks = incompleteChunks.Select(async chunk =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                await _chunkDownloader.DownloadChunkAsync(chunk, _blobService, progress, ct);
+                await assemblyQueue.Writer.WriteAsync(chunk, ct);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(downloadTasks);
+
+        // Signal no more chunks to assemble, then wait for assembly to finish
+        assemblyQueue.Writer.Complete();
+        await assemblyTask;
+    }
+
+    private async Task DownloadChunksAsync(
+        DownloadManifest manifest, IDownloadProgress? progress, CancellationToken ct)
+    {
+        var incompleteChunks = manifest.Chunks.Where(c => !c.IsComplete).ToList();
+
+        if (incompleteChunks.Count == 0)
+            return;
+
+        using var semaphore = new SemaphoreSlim(_options.MaxConcurrency);
+
+        var tasks = incompleteChunks.Select(async chunk =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                await _chunkDownloader.DownloadChunkAsync(chunk, _blobService, progress, ct);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
     private async Task<DownloadManifest> LoadOrCreateManifestAsync(
         string manifestPath, BlobMetadata metadata, string outputPath, CancellationToken ct)
     {
@@ -201,32 +308,6 @@ public sealed class DownloadOrchestrator
             ChunkSizeBytes = (int)chunkSize,
             Chunks = chunks
         };
-    }
-
-    private async Task DownloadChunksAsync(
-        DownloadManifest manifest, IDownloadProgress? progress, CancellationToken ct)
-    {
-        var incompleteChunks = manifest.Chunks.Where(c => !c.IsComplete).ToList();
-
-        if (incompleteChunks.Count == 0)
-            return;
-
-        using var semaphore = new SemaphoreSlim(_options.MaxConcurrency);
-
-        var tasks = incompleteChunks.Select(async chunk =>
-        {
-            await semaphore.WaitAsync(ct);
-            try
-            {
-                await _chunkDownloader.DownloadChunkAsync(chunk, _blobService, progress, ct);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
-
-        await Task.WhenAll(tasks);
     }
 
     internal static long ComputeChunkSize(long totalSize, int maxConcurrency, int maxChunkSizeBytes)

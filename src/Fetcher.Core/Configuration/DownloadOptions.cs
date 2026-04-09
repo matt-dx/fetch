@@ -11,4 +11,5 @@ public sealed record DownloadOptions
     public int MaxRetriesPerChunk { get; init; } = 5;
     public TimeSpan RetryBaseDelay { get; init; } = TimeSpan.FromSeconds(2);
     public bool WriteDebugManifest { get; init; } = false;
+    public bool WaitForDownload { get; init; } = false;
 }

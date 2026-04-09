@@ -14,6 +14,7 @@ public class DownloadOrchestratorTests : IDisposable
     private readonly IBlobService _blobService;
     private readonly IChunkDownloader _chunkDownloader;
     private readonly IFileAssembler _fileAssembler;
+    private readonly IAssemblySession _assemblySession;
     private readonly IIntegrityValidator _validator;
     private readonly IDownloadProgress _progress;
     private readonly byte[] _contentHash = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -26,8 +27,13 @@ public class DownloadOrchestratorTests : IDisposable
         _blobService = Substitute.For<IBlobService>();
         _chunkDownloader = Substitute.For<IChunkDownloader>();
         _fileAssembler = Substitute.For<IFileAssembler>();
+        _assemblySession = Substitute.For<IAssemblySession>();
         _validator = Substitute.For<IIntegrityValidator>();
         _progress = Substitute.For<IDownloadProgress>();
+
+        // Default: streaming assembly returns a mock session
+        _fileAssembler.BeginAssembly(Arg.Any<string>(), Arg.Any<long>())
+            .Returns(_assemblySession);
     }
 
     public void Dispose()
@@ -68,8 +74,45 @@ public class DownloadOrchestratorTests : IDisposable
         await _chunkDownloader.Received().DownloadChunkAsync(
             Arg.Any<ChunkState>(), _blobService, _progress, Arg.Any<CancellationToken>());
 
+        // Default mode uses streaming assembly via BeginAssembly
+        _fileAssembler.Received().BeginAssembly(
+            Arg.Any<string>(), 1024);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_WaitForDownload_UsesBatchAssembly()
+    {
+        _blobService.GetBlobMetadataAsync(Arg.Any<CancellationToken>())
+            .Returns(new BlobMetadata(1024, _contentHash));
+
+        _validator.ValidateAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var options = new DownloadOptions
+        {
+            BlobUri = new Uri("https://account.blob.core.windows.net/container/file.zip"),
+            LocalPath = _tempDir,
+            MaxChunkSizeBytes = 512,
+            MaxConcurrency = 2,
+            WaitForDownload = true
+        };
+
+        var orchestrator = CreateOrchestrator(options);
+        var result = await orchestrator.DownloadAsync(_progress);
+
+        result.Success.Should().BeTrue();
+
+        // WaitForDownload uses batch AssembleAsync
         await _fileAssembler.Received().AssembleAsync(
             Arg.Any<string>(), Arg.Any<DownloadManifest>(), Arg.Any<CancellationToken>());
+
+        // And reports Assembling phase separately
+        Received.InOrder(() =>
+        {
+            _progress.ReportPhaseChanged(DownloadPhase.Downloading);
+            _progress.ReportPhaseChanged(DownloadPhase.Assembling);
+            _progress.ReportPhaseChanged(DownloadPhase.Validating);
+        });
     }
 
     [Fact]
@@ -142,7 +185,7 @@ public class DownloadOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadAsync_ReportsPhaseChanges()
+    public async Task DownloadAsync_StreamingMode_ReportsPhaseChanges()
     {
         _blobService.GetBlobMetadataAsync(Arg.Any<CancellationToken>())
             .Returns(new BlobMetadata(512, _contentHash));
@@ -153,11 +196,11 @@ public class DownloadOrchestratorTests : IDisposable
         var orchestrator = CreateOrchestrator();
         await orchestrator.DownloadAsync(_progress);
 
+        // Streaming mode: no separate Assembling phase
         Received.InOrder(() =>
         {
             _progress.ReportPhaseChanged(DownloadPhase.Preparing);
             _progress.ReportPhaseChanged(DownloadPhase.Downloading);
-            _progress.ReportPhaseChanged(DownloadPhase.Assembling);
             _progress.ReportPhaseChanged(DownloadPhase.Validating);
             _progress.ReportPhaseChanged(DownloadPhase.Complete);
         });

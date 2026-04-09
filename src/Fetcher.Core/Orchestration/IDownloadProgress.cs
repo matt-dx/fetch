@@ -15,6 +15,7 @@ public interface IDownloadProgress
     void ReportMetadata(long totalSize, int totalChunks);
     void ReportBytesWritten(int chunkIndex, long totalBytesWritten);
     void ReportChunkCompleted(int chunkIndex);
+    void ReportChunkAssembled(int chunkIndex);
     void ReportPhaseChanged(DownloadPhase phase);
     void ReportError(int chunkIndex, Exception ex, int retryAttempt);
 }

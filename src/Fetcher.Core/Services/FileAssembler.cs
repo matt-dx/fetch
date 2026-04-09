@@ -15,11 +15,7 @@ public sealed class FileAssembler : IFileAssembler
 
     public async Task AssembleAsync(string outputPath, DownloadManifest manifest, CancellationToken ct = default)
     {
-        using var handle = File.OpenHandle(
-            outputPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
-            FileOptions.Asynchronous);
-
-        RandomAccess.SetLength(handle, manifest.TotalSize);
+        using var session = BeginAssembly(outputPath, manifest.TotalSize);
 
         // Only assemble chunks whose temp files still exist (skip already-assembled ones)
         var pendingChunks = manifest.Chunks.Where(c => File.Exists(c.TempFilePath)).ToList();
@@ -31,7 +27,7 @@ public sealed class FileAssembler : IFileAssembler
             await semaphore.WaitAsync(ct);
             try
             {
-                await WriteChunkAsync(handle, chunk, ct);
+                await session.WriteChunkAsync(chunk, ct);
             }
             finally
             {
@@ -42,24 +38,51 @@ public sealed class FileAssembler : IFileAssembler
         await Task.WhenAll(tasks);
     }
 
-    private async Task WriteChunkAsync(SafeFileHandle handle, ChunkState chunk, CancellationToken ct)
+    public IAssemblySession BeginAssembly(string outputPath, long totalSize)
     {
-        var buffer = new byte[_options.BufferSizeBytes];
-        long position = chunk.Offset;
-        int bytesRead;
+        return new AssemblySession(outputPath, totalSize, _options.BufferSizeBytes);
+    }
 
-        // Explicit using block ensures the file handle is closed before we delete
-        using (var chunkStream = new FileStream(
-            chunk.TempFilePath, FileMode.Open, FileAccess.Read, FileShare.None,
-            _options.BufferSizeBytes, FileOptions.SequentialScan))
+    private sealed class AssemblySession : IAssemblySession
+    {
+        private readonly SafeFileHandle _handle;
+        private readonly int _bufferSize;
+
+        public AssemblySession(string outputPath, long totalSize, int bufferSize)
         {
-            while ((bytesRead = await chunkStream.ReadAsync(buffer.AsMemory(), ct)) > 0)
-            {
-                await RandomAccess.WriteAsync(handle, buffer.AsMemory(0, bytesRead), position, ct);
-                position += bytesRead;
-            }
+            _bufferSize = bufferSize;
+            _handle = File.OpenHandle(
+                outputPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
+                FileOptions.Asynchronous);
+            RandomAccess.SetLength(_handle, totalSize);
         }
 
-        File.Delete(chunk.TempFilePath);
+        public async Task WriteChunkAsync(ChunkState chunk, CancellationToken ct = default)
+        {
+            if (!File.Exists(chunk.TempFilePath))
+                return;
+
+            var buffer = new byte[_bufferSize];
+            long position = chunk.Offset;
+            int bytesRead;
+
+            using (var chunkStream = new FileStream(
+                chunk.TempFilePath, FileMode.Open, FileAccess.Read, FileShare.None,
+                _bufferSize, FileOptions.SequentialScan))
+            {
+                while ((bytesRead = await chunkStream.ReadAsync(buffer.AsMemory(), ct)) > 0)
+                {
+                    await RandomAccess.WriteAsync(_handle, buffer.AsMemory(0, bytesRead), position, ct);
+                    position += bytesRead;
+                }
+            }
+
+            File.Delete(chunk.TempFilePath);
+        }
+
+        public void Dispose()
+        {
+            _handle.Dispose();
+        }
     }
 }

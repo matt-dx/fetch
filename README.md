@@ -40,8 +40,9 @@ Arguments:
 Options:
   -o, --output <path>        Output file or directory [default: current directory]
   -k, --key <key>            Storage account key (omit for DefaultAzureCredential)
-  -c, --concurrency <n>      Max parallel chunk downloads [default: CPU cores * 16]
+  -c, --concurrency <n>      Max parallel chunk downloads [default: min(CPU * 4, 32)]
   -s, --chunk-size <mb>      Max chunk size in MB (cap) [default: 256]
+  --WaitForDownload          Download all chunks before assembling (disables streaming assembly)
   --debug                    Write download manifest after each chunk
   --version                  Show version
   -h, --help                 Show help
