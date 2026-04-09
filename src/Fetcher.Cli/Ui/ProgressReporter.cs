@@ -8,14 +8,16 @@ public sealed class ProgressReporter : IDownloadProgress
 {
     private readonly ConcurrentDictionary<int, long> _chunkBytes = new();
     private readonly ConcurrentDictionary<int, bool> _chunkCompleted = new();
-    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+    private readonly Stopwatch _stopwatch = new();
     private long _totalBytesWritten;
+    private long _resumedBytes;
 
     public DownloadPhase CurrentPhase { get; private set; } = DownloadPhase.Preparing;
     public long TotalSize { get; set; }
     public int TotalChunks { get; set; }
 
     public long TotalBytesWritten => Interlocked.Read(ref _totalBytesWritten);
+    public long SessionBytesWritten => TotalBytesWritten - Interlocked.Read(ref _resumedBytes);
     public int CompletedChunks => _chunkCompleted.Count;
     public TimeSpan Elapsed => _stopwatch.Elapsed;
 
@@ -26,7 +28,7 @@ public sealed class ProgressReporter : IDownloadProgress
         get
         {
             var seconds = Elapsed.TotalSeconds;
-            return seconds > 0 ? TotalBytesWritten / seconds : 0;
+            return seconds > 0 ? SessionBytesWritten / seconds : 0;
         }
     }
 
@@ -39,6 +41,16 @@ public sealed class ProgressReporter : IDownloadProgress
             var remaining = TotalSize - TotalBytesWritten;
             return TimeSpan.FromSeconds(remaining / bps);
         }
+    }
+
+    /// <summary>
+    /// Locks in the current total as the resumed baseline and starts the session timer.
+    /// Call once after seeding existing chunk state, before downloading begins.
+    /// </summary>
+    public void StartSession()
+    {
+        Interlocked.Exchange(ref _resumedBytes, Interlocked.Read(ref _totalBytesWritten));
+        _stopwatch.Restart();
     }
 
     public void ReportMetadata(long totalSize, int totalChunks)
@@ -64,6 +76,9 @@ public sealed class ProgressReporter : IDownloadProgress
 
     public void ReportPhaseChanged(DownloadPhase phase)
     {
+        if (phase == DownloadPhase.Downloading && !_stopwatch.IsRunning)
+            StartSession();
+
         CurrentPhase = phase;
     }
 

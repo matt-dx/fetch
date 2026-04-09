@@ -61,8 +61,16 @@ public sealed class DownloadOrchestrator
             var manifestPath = DownloadManifest.GetManifestPath(outputPath);
             manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, ct);
 
-            // 5. Report metadata and download chunks
+            // 5. Report metadata and seed progress with existing chunk state (for resume)
             progress?.ReportMetadata(manifest.TotalSize, manifest.Chunks.Count);
+            foreach (var chunk in manifest.Chunks)
+            {
+                if (chunk.BytesWritten > 0)
+                    progress?.ReportBytesWritten(chunk.Index, chunk.BytesWritten);
+                if (chunk.IsComplete)
+                    progress?.ReportChunkCompleted(chunk.Index);
+            }
+
             progress?.ReportPhaseChanged(DownloadPhase.Downloading);
             var downloadStopwatch = Stopwatch.StartNew();
 
