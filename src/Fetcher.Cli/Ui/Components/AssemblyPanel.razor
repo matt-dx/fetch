@@ -1,0 +1,16 @@
+@code {
+    [Parameter] public ProgressReporter Progress { get; set; } = default!;
+
+    private static string BuildBar(double progress, int width = 30)
+    {
+        var filled = (int)Math.Min(progress * width, width);
+        var empty = width - filled;
+        return $"[{new string('\u2588', filled)}{new string(' ', empty)}]";
+    }
+}
+
+<Grid Columns="3">
+    <Markup Content="@BuildBar(Progress.AssemblyProgress)" Foreground="@Color.Green" />
+    <Markup Content="@($"{Progress.AssemblyProgress * 100,5:F1}%")" />
+    <Markup Content="@($"Chunks: {Progress.AssembledChunks}/{Progress.TotalChunks}")" />
+</Grid>

@@ -54,12 +54,14 @@ public sealed class DownloadOrchestrator
             var manifestPath = DownloadManifest.GetManifestPath(outputPath);
             var hasManifest = File.Exists(manifestPath);
 
-            // Only treat the file as "already complete" if there's no manifest.
-            // A manifest means a previous download/assembly didn't finish — resume it.
+            // Only treat the file as "already complete" if there's no manifest
+            // AND no chunk temp files on disk (which indicate a partial download).
+            // A manifest or temp files mean a previous session didn't finish — resume it.
             if (!hasManifest && File.Exists(outputPath))
             {
                 var existingSize = new FileInfo(outputPath).Length;
-                if (existingSize == metadata.ContentLength)
+                var hasChunkFiles = File.Exists($"{outputPath}.000000");
+                if (existingSize == metadata.ContentLength && !hasChunkFiles)
                     throw new FileAlreadyExistsException(outputPath, existingSize);
             }
 
@@ -70,6 +72,7 @@ public sealed class DownloadOrchestrator
             progress?.ReportMetadata(manifest.TotalSize, manifest.Chunks.Count);
             foreach (var chunk in manifest.Chunks)
             {
+                progress?.ReportChunkInfo(chunk.Index, chunk.Length);
                 if (chunk.BytesWritten > 0)
                     progress?.ReportBytesWritten(chunk.Index, chunk.BytesWritten);
                 if (chunk.IsComplete)
@@ -306,7 +309,7 @@ public sealed class DownloadOrchestrator
             });
         }
 
-        return new DownloadManifest
+        var manifest = new DownloadManifest
         {
             BlobUri = _options.BlobUri,
             TotalSize = metadata.ContentLength,
@@ -314,6 +317,12 @@ public sealed class DownloadOrchestrator
             ChunkSizeBytes = (int)chunkSize,
             Chunks = chunks
         };
+
+        // Pick up any existing chunk temp files from a previous interrupted session
+        // (e.g., process was killed before manifest could be saved)
+        manifest.SyncBytesWrittenFromDisk();
+
+        return manifest;
     }
 
     internal static long ComputeChunkSize(long totalSize, int maxConcurrency, int maxChunkSizeBytes)

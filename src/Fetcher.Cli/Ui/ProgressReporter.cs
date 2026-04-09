@@ -4,9 +4,12 @@ using Fetcher.Core.Orchestration;
 
 namespace Fetcher.Cli.Ui;
 
+public sealed record ChunkProgress(int Index, long BytesWritten, long TotalLength);
+
 public sealed class ProgressReporter : IDownloadProgress
 {
     private readonly ConcurrentDictionary<int, long> _chunkBytes = new();
+    private readonly ConcurrentDictionary<int, long> _chunkLengths = new();
     private readonly ConcurrentDictionary<int, bool> _chunkCompleted = new();
     private readonly ConcurrentDictionary<int, bool> _chunkAssembled = new();
     private readonly Stopwatch _stopwatch = new();
@@ -16,6 +19,7 @@ public sealed class ProgressReporter : IDownloadProgress
     public DownloadPhase CurrentPhase { get; private set; } = DownloadPhase.Preparing;
     public long TotalSize { get; set; }
     public int TotalChunks { get; set; }
+    public string? FileName { get; set; }
 
     // Download tracking
     public long TotalBytesWritten => Interlocked.Read(ref _totalBytesWritten);
@@ -49,6 +53,19 @@ public sealed class ProgressReporter : IDownloadProgress
     public int AssembledChunks => _chunkAssembled.Count;
     public double AssemblyProgress => TotalChunks > 0 ? (double)AssembledChunks / TotalChunks : 0;
 
+    // Per-chunk detail view
+    public IReadOnlyList<ChunkProgress> GetActiveChunks()
+    {
+        return _chunkBytes
+            .Where(kvp => !_chunkCompleted.ContainsKey(kvp.Key))
+            .Select(kvp => new ChunkProgress(
+                kvp.Key,
+                kvp.Value,
+                _chunkLengths.GetValueOrDefault(kvp.Key, 0)))
+            .OrderBy(c => c.Index)
+            .ToList();
+    }
+
     /// <summary>
     /// Locks in the current total as the resumed baseline and starts the session timer.
     /// Call once after seeding existing chunk state, before downloading begins.
@@ -63,6 +80,11 @@ public sealed class ProgressReporter : IDownloadProgress
     {
         TotalSize = totalSize;
         TotalChunks = totalChunks;
+    }
+
+    public void ReportChunkInfo(int chunkIndex, long length)
+    {
+        _chunkLengths[chunkIndex] = length;
     }
 
     public void ReportBytesWritten(int chunkIndex, long totalBytesWritten)

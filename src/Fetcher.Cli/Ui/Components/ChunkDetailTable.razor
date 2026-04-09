@@ -1,0 +1,72 @@
+@code {
+    [Parameter] public ProgressReporter Progress { get; set; } = default!;
+
+    private static readonly Color[] ChunkColors =
+    [
+        Color.Red,
+        Color.Orange1,
+        Color.Yellow,
+        Color.Green,
+        Color.DodgerBlue1,
+        Color.MediumPurple1,
+        Color.DeepPink1,
+        Color.Cyan1,
+        Color.SpringGreen1,
+        Color.Gold1,
+        Color.SteelBlue1,
+        Color.Salmon1,
+        Color.Orchid,
+        Color.Turquoise2,
+        Color.Chartreuse1,
+        Color.HotPink,
+        Color.MediumSpringGreen,
+        Color.CornflowerBlue,
+        Color.Plum1,
+        Color.LightCoral,
+        Color.Aquamarine1,
+        Color.NavajoWhite1,
+        Color.LightSkyBlue1,
+        Color.Violet,
+    ];
+
+    private static Color GetChunkColor(int index) => ChunkColors[index % ChunkColors.Length];
+
+    private static string BuildMiniBar(ChunkProgress chunk, int width = 18)
+    {
+        var pct = chunk.TotalLength > 0 ? (double)chunk.BytesWritten / chunk.TotalLength : 0;
+        var filled = (int)Math.Min(pct * width, width);
+        var empty = width - filled;
+        return $"[{new string('\u2588', filled)}{new string(' ', empty)}]";
+    }
+}
+
+@{
+    var activeChunks = Progress.GetActiveChunks();
+}
+
+@if (activeChunks.Count > 0)
+{
+    <Grid Columns="4">
+        <Markup Content="Chunk" Decoration="@Decoration.Bold" />
+        <Markup Content="Progress" Decoration="@Decoration.Bold" />
+        <Markup Content="Chunk" Decoration="@Decoration.Bold" />
+        <Markup Content="Progress" Decoration="@Decoration.Bold" />
+
+        @for (var i = 0; i < activeChunks.Count; i += 2)
+        {
+            <Markup Content="@($"{activeChunks[i].Index,5}")" Foreground="@GetChunkColor(activeChunks[i].Index)" />
+            <Markup Content="@BuildMiniBar(activeChunks[i])" Foreground="@GetChunkColor(activeChunks[i].Index)" />
+
+            @if (i + 1 < activeChunks.Count)
+            {
+                <Markup Content="@($"{activeChunks[i + 1].Index,5}")" Foreground="@GetChunkColor(activeChunks[i + 1].Index)" />
+                <Markup Content="@BuildMiniBar(activeChunks[i + 1])" Foreground="@GetChunkColor(activeChunks[i + 1].Index)" />
+            }
+            else
+            {
+                <Markup Content=" " />
+                <Markup Content=" " />
+            }
+        }
+    </Grid>
+}
