@@ -49,8 +49,13 @@ public sealed class DownloadOrchestrator
             // 2. Resolve output path
             outputPath = ResolveOutputPath(_options.LocalPath, _options.BlobUri);
 
-            // 3. Check if file already exists with correct size
-            if (File.Exists(outputPath))
+            // 3. Check for existing manifest (resume) or completed file
+            var manifestPath = DownloadManifest.GetManifestPath(outputPath);
+            var hasManifest = File.Exists(manifestPath);
+
+            // Only treat the file as "already complete" if there's no manifest.
+            // A manifest means a previous download/assembly didn't finish — resume it.
+            if (!hasManifest && File.Exists(outputPath))
             {
                 var existingSize = new FileInfo(outputPath).Length;
                 if (existingSize == metadata.ContentLength)
@@ -58,7 +63,6 @@ public sealed class DownloadOrchestrator
             }
 
             // 4. Load or create manifest
-            var manifestPath = DownloadManifest.GetManifestPath(outputPath);
             manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, ct);
 
             // 5. Report metadata and seed progress with existing chunk state (for resume)

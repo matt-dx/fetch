@@ -116,7 +116,8 @@ static async Task RunProgressDisplayAsync(ProgressReporter progress, Cancellatio
         while (await timer.WaitForNextTickAsync(ct))
         {
             var phase = progress.CurrentPhase;
-            var pct = progress.Progress * 100;
+            var rawPct = progress.Progress * 100;
+            var pct = progress.Progress >= 1.0 ? 100.0 : Math.Floor(rawPct * 10) / 10; // floor to 99.9% max until truly complete
             var speed = ByteFormatter.Format((long)progress.BytesPerSecond);
             var written = ByteFormatter.Format(progress.TotalBytesWritten);
             var total = ByteFormatter.Format(progress.TotalSize);

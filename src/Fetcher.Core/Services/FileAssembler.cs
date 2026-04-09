@@ -16,14 +16,17 @@ public sealed class FileAssembler : IFileAssembler
     public async Task AssembleAsync(string outputPath, DownloadManifest manifest, CancellationToken ct = default)
     {
         using var handle = File.OpenHandle(
-            outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
+            outputPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
             FileOptions.Asynchronous);
 
         RandomAccess.SetLength(handle, manifest.TotalSize);
 
+        // Only assemble chunks whose temp files still exist (skip already-assembled ones)
+        var pendingChunks = manifest.Chunks.Where(c => File.Exists(c.TempFilePath)).ToList();
+
         var semaphore = new SemaphoreSlim(_options.MaxConcurrency);
 
-        var tasks = manifest.Chunks.Select(async chunk =>
+        var tasks = pendingChunks.Select(async chunk =>
         {
             await semaphore.WaitAsync(ct);
             try
