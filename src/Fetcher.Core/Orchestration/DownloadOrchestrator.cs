@@ -219,24 +219,30 @@ public sealed class DownloadOrchestrator
         // Download producer tasks
         using var semaphore = new SemaphoreSlim(_options.MaxConcurrency);
 
-        var downloadTasks = incompleteChunks.Select(async chunk =>
+        try
         {
-            await semaphore.WaitAsync(ct);
-            try
+            var downloadTasks = incompleteChunks.Select(async chunk =>
             {
-                await _chunkDownloader.DownloadChunkAsync(chunk, _blobService, progress, ct);
-                await assemblyQueue.Writer.WriteAsync(chunk, ct);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
+                await semaphore.WaitAsync(ct);
+                try
+                {
+                    await _chunkDownloader.DownloadChunkAsync(chunk, _blobService, progress, ct);
+                    await assemblyQueue.Writer.WriteAsync(chunk, ct);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToList(); // Force eager evaluation so all tasks start
 
-        await Task.WhenAll(downloadTasks);
+            await Task.WhenAll(downloadTasks);
+        }
+        finally
+        {
+            // Always signal completion so the assembly consumer exits
+            assemblyQueue.Writer.Complete();
+        }
 
-        // Signal no more chunks to assemble, then wait for assembly to finish
-        assemblyQueue.Writer.Complete();
         await assemblyTask;
     }
 
