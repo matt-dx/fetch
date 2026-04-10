@@ -40,11 +40,19 @@ public static class SleepPrevention
         {
             const uint flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED;
 
-            SetThreadExecutionState(flags);
-
-            while (!_stopSignal.Wait(RefreshInterval))
+            try
             {
                 SetThreadExecutionState(flags);
+
+                while (!_stopSignal.Wait(RefreshInterval))
+                {
+                    SetThreadExecutionState(flags);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Dispose() was called and the signal was disposed before we
+                // could observe it — fall through to clear the execution state.
             }
 
             SetThreadExecutionState(ES_CONTINUOUS);
@@ -53,8 +61,14 @@ public static class SleepPrevention
         public void Dispose()
         {
             _stopSignal.Set();
-            _thread.Join(TimeSpan.FromSeconds(5));
-            _stopSignal.Dispose();
+            if (_thread.Join(TimeSpan.FromSeconds(5)))
+            {
+                _stopSignal.Dispose();
+            }
+            // If Join timed out the background thread is still running.
+            // It will observe the signalled event on its next iteration and
+            // exit cleanly.  We intentionally leak the ManualResetEventSlim
+            // rather than disposing it out from under the thread.
         }
     }
 
