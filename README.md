@@ -35,7 +35,7 @@ dotnet test Fetcher.slnx
 
 ## Usage
 
-```
+```text
 fetcher <url> [options]
 
 Arguments:
@@ -87,7 +87,7 @@ If a download is interrupted, simply re-run the same command. Fetcher detects th
 
 ## Project Structure
 
-```
+```text
 Fetcher.slnx
 ├── src/
 │   ├── Fetcher.Core/           Core library (no UI dependencies)
