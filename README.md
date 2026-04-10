@@ -1,4 +1,4 @@
-# Fetcher
+# Fetch
 
 ![Simple View](.images/screenshot-less.png)
 
@@ -24,19 +24,19 @@ A .NET 9 console application that downloads large files from Azure Blob Storage 
 ## Building
 
 ```bash
-dotnet build Fetcher.slnx
+dotnet build Fetch.slnx
 ```
 
 ## Running Tests
 
 ```bash
-dotnet test Fetcher.slnx
+dotnet test Fetch.slnx
 ```
 
 ## Usage
 
 ```text
-fetcher <url> [options]
+fetch <url> [options]
 
 Arguments:
   <url>    Azure Blob Storage URL (required)
@@ -57,13 +57,13 @@ Options:
 Download a blob to the current directory using DefaultAzureCredential:
 
 ```bash
-dotnet run --project src/Fetcher.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip"
+dotnet run --project src/Fetch.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip"
 ```
 
 Download with a storage account key to a specific directory:
 
 ```bash
-dotnet run --project src/Fetcher.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip" \
+dotnet run --project src/Fetch.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip" \
   -k "your-storage-account-key" \
   -o "D:\Downloads"
 ```
@@ -71,7 +71,7 @@ dotnet run --project src/Fetcher.Cli -- "https://myaccount.blob.core.windows.net
 Download with custom concurrency and chunk size:
 
 ```bash
-dotnet run --project src/Fetcher.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip" \
+dotnet run --project src/Fetch.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip" \
   -c 64 -s 128 -o "output.zip"
 ```
 
@@ -83,32 +83,32 @@ For example, a 4 GB file with 16 threads produces 16 chunks of 256 MB each. A 16
 
 ### Resume
 
-If a download is interrupted, simply re-run the same command. Fetcher detects the manifest file (`{filename}.fetcher-manifest.json`) next to the output location and resumes from where it left off. If the blob has changed since the previous attempt, the stale state is discarded and the download starts fresh.
+If a download is interrupted, simply re-run the same command. Fetch detects the manifest file (`{filename}.fetch-manifest.json`) next to the output location and resumes from where it left off. If the blob has changed since the previous attempt, the stale state is discarded and the download starts fresh.
 
 ## Project Structure
 
 ```text
-Fetcher.slnx
+Fetch.slnx
 ├── src/
-│   ├── Fetcher.Core/           Core library (no UI dependencies)
+│   ├── Fetch.Core/           Core library (no UI dependencies)
 │   │   ├── Configuration/      DownloadOptions record
 │   │   ├── Models/             ChunkState, DownloadManifest
 │   │   ├── Services/           IBlobService, IChunkDownloader, IFileAssembler, IIntegrityValidator
 │   │   ├── Orchestration/      DownloadOrchestrator, IDownloadProgress
 │   │   ├── Exceptions/         Typed exceptions
 │   │   └── Utilities/          ByteFormatter
-│   └── Fetcher.Cli/            Console application
+│   └── Fetch.Cli/            Console application
 │       ├── Program.cs          CLI entry point (System.CommandLine)
 │       ├── Platform/           Windows sleep prevention
 │       └── Ui/                 ProgressReporter
 └── tests/
-    ├── Fetcher.Core.Tests/     Unit tests for core library
-    └── Fetcher.Cli.Tests/      CLI argument parsing tests
+    ├── Fetch.Core.Tests/     Unit tests for core library
+    └── Fetch.Cli.Tests/      CLI argument parsing tests
 ```
 
 ## Architecture
 
-The core library (`Fetcher.Core`) is fully decoupled from the console UI:
+The core library (`Fetch.Core`) is fully decoupled from the console UI:
 
 - **`IBlobService`** — abstracts Azure Blob SDK operations behind a testable interface
 - **`IChunkDownloader`** — downloads a single chunk with retry and exponential backoff
