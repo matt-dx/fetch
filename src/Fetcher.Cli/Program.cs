@@ -71,4 +71,4 @@ builder.Services.AddSingleton<IIntegrityValidator, Md5Validator>();
 builder.Services.AddSingleton<DownloadOrchestrator>();
 
 await builder.Build().RunAsync();
-return 0;
+return Environment.ExitCode;

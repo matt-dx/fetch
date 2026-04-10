@@ -30,12 +30,20 @@ public sealed class DownloadManifest
         // Write to a temp file first, then atomically replace the target.
         // This prevents an empty/corrupt manifest if the process is killed mid-write.
         var tempPath = path + ".tmp";
-        await using (var stream = File.Create(tempPath))
+        try
         {
-            await JsonSerializer.SerializeAsync(stream, this, JsonOptions, ct);
-        }
+            await using (var stream = File.Create(tempPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, this, JsonOptions, ct);
+            }
 
-        File.Move(tempPath, path, overwrite: true);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { }
+            throw;
+        }
     }
 
     public static async Task<DownloadManifest?> LoadAsync(string path, CancellationToken ct = default)
