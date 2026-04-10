@@ -17,11 +17,11 @@ public static class SleepPrevention
     }
 
     [DllImport("kernel32.dll")]
-    private static extern uint SetThreadExecutionState(uint esFlags);
+    internal static extern uint SetThreadExecutionState(uint esFlags);
 
     private sealed class SleepGuard : IDisposable
     {
-        public void Dispose() => SetThreadExecutionState(ES_CONTINUOUS);
+        public void Dispose() => _ = SetThreadExecutionState(ES_CONTINUOUS);
     }
 
     private sealed class NoOpDisposable : IDisposable
