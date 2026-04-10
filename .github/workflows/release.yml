@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - run: dotnet test Fetcher.slnx -c Release
+
+      - run: dotnet publish src/Fetcher.Cli/Fetcher.Cli.csproj -c Release -r win-x64 -o publish
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release #${{ github.run_number }}
+          files: publish/Fetcher.Cli.exe
+          generate_release_notes: true

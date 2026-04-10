@@ -33,7 +33,7 @@ public class CliParsingTests
         var result = cmd.Parse("https://account.blob.core.windows.net/container/file.zip");
 
         result.Errors.Should().BeEmpty();
-        result.GetValueForArgument(cmd.Arguments.First() as Argument<Uri>)
+        result.GetValueForArgument((cmd.Arguments.First() as Argument<Uri>)!)
             .Should().Be(new Uri("https://account.blob.core.windows.net/container/file.zip"));
     }
 
@@ -63,7 +63,7 @@ public class CliParsingTests
 
         result.Errors.Should().BeEmpty();
         var outputOpt = cmd.Options.First(o => o.Name == "output") as Option<string?>;
-        result.GetValueForOption(outputOpt).Should().Be("/my/path");
+        result.GetValueForOption(outputOpt!).Should().Be("/my/path");
     }
 
     [Fact]
@@ -74,6 +74,6 @@ public class CliParsingTests
 
         result.Errors.Should().BeEmpty();
         var concurrencyOpt = cmd.Options.First(o => o.Name == "concurrency") as Option<int?>;
-        result.GetValueForOption(concurrencyOpt).Should().Be(32);
+        result.GetValueForOption(concurrencyOpt!).Should().Be(32);
     }
 }
