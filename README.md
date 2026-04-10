@@ -1,6 +1,10 @@
 # Fetcher
 
+![Simple View](.images/screenshot-less.png)
+
 A .NET 9 console application that downloads large files from Azure Blob Storage using parallel, chunked, resumable downloads with a live-updating terminal progress display.
+
+![Expanded View](.images/screenshot-more.png)
 
 ## Features
 
@@ -31,7 +35,7 @@ dotnet test Fetcher.slnx
 
 ## Usage
 
-```
+```text
 fetcher <url> [options]
 
 Arguments:
@@ -83,7 +87,7 @@ If a download is interrupted, simply re-run the same command. Fetcher detects th
 
 ## Project Structure
 
-```
+```text
 Fetcher.slnx
 ├── src/
 │   ├── Fetcher.Core/           Core library (no UI dependencies)

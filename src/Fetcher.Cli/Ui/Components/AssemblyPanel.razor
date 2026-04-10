@@ -10,12 +10,12 @@
 }
 
 <Columns>
-    <Panel Border="BoxBorder.None" Width="44">
+    <Panel Border="BoxBorder.None" Width="45">
         <Align Horizontal="HorizontalAlignment.Left">
             <Markup Content="@BuildBar(Progress.AssemblyProgress)" Foreground="@Color.Green" />
         </Align>
     </Panel>
-    <Panel Border="BoxBorder.None" Width="11">
+    <Panel Border="BoxBorder.None" Width="15">
         <Align Horizontal="HorizontalAlignment.Right">
             <Markup Content="@($"{Progress.AssemblyProgress * 100,5:F1}%")" />
         </Align>
