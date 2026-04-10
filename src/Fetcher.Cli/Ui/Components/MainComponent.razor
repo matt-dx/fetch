@@ -89,9 +89,7 @@
 }
 
 <Rows>
-    <Align Horizontal="HorizontalAlignment.Center">
-        <Markup Content="@_fileName" Decoration="@Decoration.Bold" />
-    </Align>
+    <Markup Content="@_fileName" Decoration="@Decoration.Bold" />
 
     @if (_result is not null)
     {
@@ -123,10 +121,10 @@
     }
     else
     {
-        <Panel Title="Download Status" Border="BoxBorder.Rounded" Expand="true">
+        <Panel Title="┨Download Status┠" Border="BoxBorder.Rounded" Expand="false" BorderColor="@Color.SteelBlue1">
             <DownloadPanel Progress="@Progress" />
         </Panel>
-        <Panel Title="Assembly Status" Border="BoxBorder.Rounded" Expand="true">
+        <Panel Title="┨Assembly Status┠" Border="BoxBorder.Rounded" Expand="false" BorderColor="@Color.SpringGreen1">
             <AssemblyPanel Progress="@Progress" />
         </Panel>
     }

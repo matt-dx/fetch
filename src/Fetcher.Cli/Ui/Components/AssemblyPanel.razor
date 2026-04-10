@@ -1,7 +1,7 @@
 @code {
     [Parameter] public ProgressReporter Progress { get; set; } = default!;
 
-    private static string BuildBar(double progress, int width = 30)
+    private static string BuildBar(double progress, int width = 40)
     {
         var filled = (int)Math.Min(progress * width, width);
         var empty = width - filled;
@@ -9,8 +9,18 @@
     }
 }
 
-<Grid Columns="3">
-    <Markup Content="@BuildBar(Progress.AssemblyProgress)" Foreground="@Color.Green" />
-    <Markup Content="@($"{Progress.AssemblyProgress * 100,5:F1}%")" />
-    <Markup Content="@($"Chunks: {Progress.AssembledChunks}/{Progress.TotalChunks}")" />
-</Grid>
+<Columns>
+    <Panel Border="BoxBorder.None" Width="44">
+        <Align Horizontal="HorizontalAlignment.Left">
+            <Markup Content="@BuildBar(Progress.AssemblyProgress)" Foreground="@Color.Green" />
+        </Align>
+    </Panel>
+    <Panel Border="BoxBorder.None" Width="11">
+        <Align Horizontal="HorizontalAlignment.Right">
+            <Markup Content="@($"{Progress.AssemblyProgress * 100,5:F1}%")" />
+        </Align>
+    </Panel>
+    <Panel Border="BoxBorder.None" Width="20">
+        <Markup Content="@($"Chunks: {Progress.AssembledChunks}/{Progress.TotalChunks}")" />
+    </Panel>
+</Columns>

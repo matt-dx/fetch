@@ -5,10 +5,8 @@
     [
         Color.Red,
         Color.Orange1,
-        Color.Yellow,
-        Color.Green,
-        Color.DodgerBlue1,
         Color.MediumPurple1,
+        Color.DodgerBlue1,
         Color.DeepPink1,
         Color.Cyan1,
         Color.SpringGreen1,
@@ -22,16 +20,18 @@
         Color.MediumSpringGreen,
         Color.CornflowerBlue,
         Color.Plum1,
+        Color.Yellow,        
         Color.LightCoral,
         Color.Aquamarine1,
         Color.NavajoWhite1,
         Color.LightSkyBlue1,
+        Color.Green,
         Color.Violet,
     ];
 
     private static Color GetChunkColor(int index) => ChunkColors[index % ChunkColors.Length];
 
-    private static string BuildMiniBar(ChunkProgress chunk, int width = 18)
+    private static string BuildMiniBar(ChunkProgress chunk, int width = 28)
     {
         var pct = chunk.TotalLength > 0 ? (double)chunk.BytesWritten / chunk.TotalLength : 0;
         var filled = (int)Math.Min(pct * width, width);

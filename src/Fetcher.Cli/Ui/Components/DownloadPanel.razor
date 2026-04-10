@@ -9,7 +9,7 @@
         // Blazor auto-calls StateHasChanged after event handlers
     }
 
-    private static string BuildBar(double progress, int width = 30)
+    private static string BuildBar(double progress, int width = 40)
     {
         var filled = (int)Math.Min(progress * width, width);
         var empty = width - filled;
@@ -32,14 +32,35 @@
 }
 
 <Rows>
-    <Grid Columns="3">
-        <Markup Content="@BuildBar(Progress.DownloadProgress)" Foreground="@Color.DodgerBlue1" />
-        <Markup Content="@FormatPercentage()" />
-        <Markup Content="@($"Chunks: {Progress.CompletedChunks}/{Progress.TotalChunks}")" />
-    </Grid>
-    <Align Horizontal="HorizontalAlignment.Center">
-        <Markup Content="@($"{written}/{total}           {speed}/s     ETA: {eta:hh\\:mm\\:ss}")" />
-    </Align>
+    <Columns>
+        <Panel Border="BoxBorder.None" Width="44">
+            <Rows>
+                <Align Horizontal="HorizontalAlignment.Left">
+                    <Markup Content="@BuildBar(Progress.DownloadProgress)" Foreground="@Color.DodgerBlue1" />
+                </Align>
+                <Align Horizontal="HorizontalAlignment.Center">
+                    <Markup Content="@($"{written}/{total}")" />
+                </Align>
+            </Rows>
+        </Panel>
+        <Panel Border="BoxBorder.None" Width="11">
+            <Rows>
+                <Align Horizontal="HorizontalAlignment.Right">
+                    <Markup Content="@FormatPercentage()" />
+                </Align>
+                <Align Horizontal="HorizontalAlignment.Right">
+                    <Markup Content="@($"{speed}/s")" />
+                </Align>
+            </Rows>
+        </Panel>
+        <Panel Border="BoxBorder.None" Width="20">
+            <Rows>
+                <Markup Content="@($"Chunks: {Progress.CompletedChunks}/{Progress.TotalChunks}")" />
+                <Markup Content="@($"ETA: {eta:hh\\:mm\\:ss}")" />
+            </Rows>
+        </Panel>
+    </Columns>
+
     @if (_showDetails)
     {
         <ChunkDetailTable Progress="@Progress" />
