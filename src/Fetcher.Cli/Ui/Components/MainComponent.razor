@@ -1,7 +1,7 @@
 @using Fetcher.Cli.Platform
 @using Humanizer
 @using Microsoft.Extensions.Hosting
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ProgressReporter Progress
 @inject DownloadOptions Options
 @inject DownloadOrchestrator Orchestrator
@@ -80,13 +80,13 @@
         Lifetime.StopApplication();
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
 
         // Wait for the orchestrator to finish cleanup (manifest save)
         // before the host terminates the process
-        _downloadDone.Task.Wait(TimeSpan.FromSeconds(15));
+        await _downloadDone.Task.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
 
         _cts?.Dispose();
         _sleepGuard?.Dispose();

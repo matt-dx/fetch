@@ -56,7 +56,7 @@ var options = new DownloadOptions
 
 // Build and run the RazorConsole host at the top level so it has
 // full control over stdin for keyboard input (TextButton, etc.)
-var builder = Host.CreateApplicationBuilder(args);
+var builder = Host.CreateApplicationBuilder(Array.Empty<string>());
 builder.UseRazorConsole<MainComponent>();
 
 // Allow enough time on Ctrl+C for the orchestrator to save the manifest

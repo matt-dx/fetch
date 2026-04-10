@@ -338,7 +338,9 @@ public sealed class DownloadOrchestrator
     private static bool HasChunkFiles(string outputPath)
     {
         var dir = Path.GetDirectoryName(outputPath);
-        if (dir is null || !Directory.Exists(dir))
+        if (string.IsNullOrEmpty(dir))
+            dir = ".";
+        if (!Directory.Exists(dir))
             return false;
 
         var prefix = Path.GetFileName(outputPath) + ".";
