@@ -6,13 +6,15 @@ public static class SleepPrevention
 {
     private const uint ES_CONTINUOUS = 0x80000000;
     private const uint ES_SYSTEM_REQUIRED = 0x00000001;
+    private const uint ES_DISPLAY_REQUIRED = 0x00000002;
+
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
 
     public static IDisposable Prevent()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return new NoOpDisposable();
 
-        SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
         return new SleepGuard();
     }
 
@@ -21,7 +23,39 @@ public static class SleepPrevention
 
     private sealed class SleepGuard : IDisposable
     {
-        public void Dispose() => _ = SetThreadExecutionState(ES_CONTINUOUS);
+        private readonly Thread _thread;
+        private readonly ManualResetEventSlim _stopSignal = new(false);
+
+        public SleepGuard()
+        {
+            _thread = new Thread(KeepAwakeLoop)
+            {
+                IsBackground = true,
+                Name = "SleepPrevention"
+            };
+            _thread.Start();
+        }
+
+        private void KeepAwakeLoop()
+        {
+            const uint flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED;
+
+            SetThreadExecutionState(flags);
+
+            while (!_stopSignal.Wait(RefreshInterval))
+            {
+                SetThreadExecutionState(flags);
+            }
+
+            SetThreadExecutionState(ES_CONTINUOUS);
+        }
+
+        public void Dispose()
+        {
+            _stopSignal.Set();
+            _thread.Join(TimeSpan.FromSeconds(5));
+            _stopSignal.Dispose();
+        }
     }
 
     private sealed class NoOpDisposable : IDisposable
