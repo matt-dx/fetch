@@ -1,6 +1,10 @@
 # Fetcher
 
+![Simple View](.images/screenshot-less.png)
+
 A .NET 9 console application that downloads large files from Azure Blob Storage using parallel, chunked, resumable downloads with a live-updating terminal progress display.
+
+![Expanded View](.images/screenshot-more.png)
 
 ## Features
 
