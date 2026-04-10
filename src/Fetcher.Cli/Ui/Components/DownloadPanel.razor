@@ -1,0 +1,72 @@
+@code {
+    [Parameter] public ProgressReporter Progress { get; set; } = default!;
+
+    private bool _showDetails;
+
+    private void ToggleDetails()
+    {
+        _showDetails = !_showDetails;
+        // Blazor auto-calls StateHasChanged after event handlers
+    }
+
+    private static string BuildBar(double progress, int width = 40)
+    {
+        var filled = (int)Math.Min(progress * width, width);
+        var empty = width - filled;
+        return $"[{new string('\u2588', filled)}{new string(' ', empty)}]";
+    }
+
+    private string FormatPercentage()
+    {
+        var raw = Progress.DownloadProgress * 100;
+        var pct = Progress.DownloadProgress >= 1.0 ? 100.0 : Math.Floor(raw * 10) / 10;
+        return $"{pct,5:F1}%";
+    }
+}
+
+@{
+    var written = ByteFormatter.Format(Progress.TotalBytesWritten);
+    var total = ByteFormatter.Format(Progress.TotalSize);
+    var speed = ByteFormatter.Format((long)Progress.BytesPerSecond);
+    var eta = Progress.EstimatedTimeRemaining;
+}
+
+<Rows>
+    <Columns>
+        <Panel Border="BoxBorder.None" Width="44">
+            <Rows>
+                <Align Horizontal="HorizontalAlignment.Left">
+                    <Markup Content="@BuildBar(Progress.DownloadProgress)" Foreground="@Color.DodgerBlue1" />
+                </Align>
+                <Align Horizontal="HorizontalAlignment.Center">
+                    <Markup Content="@($"{written}/{total}")" />
+                </Align>
+            </Rows>
+        </Panel>
+        <Panel Border="BoxBorder.None" Width="11">
+            <Rows>
+                <Align Horizontal="HorizontalAlignment.Right">
+                    <Markup Content="@FormatPercentage()" />
+                </Align>
+                <Align Horizontal="HorizontalAlignment.Right">
+                    <Markup Content="@($"{speed}/s")" />
+                </Align>
+            </Rows>
+        </Panel>
+        <Panel Border="BoxBorder.None" Width="20">
+            <Rows>
+                <Markup Content="@($"Chunks: {Progress.CompletedChunks}/{Progress.TotalChunks}")" />
+                <Markup Content="@($"ETA: {eta:hh\\:mm\\:ss}")" />
+            </Rows>
+        </Panel>
+    </Columns>
+
+    @if (_showDetails)
+    {
+        <ChunkDetailTable Progress="@Progress" />
+    }
+    <TextButton Content="@(_showDetails ? "- Less" : "+ More")"
+                OnClick="ToggleDetails"
+                BackgroundColor="@Color.Default"
+                FocusedColor="@Color.DeepSkyBlue1" />
+</Rows>

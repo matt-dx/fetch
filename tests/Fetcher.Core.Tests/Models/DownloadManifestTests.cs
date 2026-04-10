@@ -103,6 +103,28 @@ public class DownloadManifestTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_CorruptJson_ReturnsNull()
+    {
+        var path = Path.Combine(_tempDir, "corrupt-manifest.json");
+        await File.WriteAllTextAsync(path, "NOT VALID JSON {{{");
+
+        var result = await DownloadManifest.LoadAsync(path);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoadAsync_EmptyFile_ReturnsNull()
+    {
+        var path = Path.Combine(_tempDir, "empty-manifest.json");
+        await File.WriteAllTextAsync(path, "");
+
+        var result = await DownloadManifest.LoadAsync(path);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public void AssignTempFilePaths_SetsCorrectPaths()
     {
         var manifest = new DownloadManifest

@@ -1,0 +1,136 @@
+@using Fetcher.Cli.Platform
+@using Humanizer
+@using Microsoft.Extensions.Hosting
+@implements IAsyncDisposable
+@inject ProgressReporter Progress
+@inject DownloadOptions Options
+@inject DownloadOrchestrator Orchestrator
+@inject IHostApplicationLifetime Lifetime
+
+@code {
+    private CancellationTokenSource? _cts;
+    private IDisposable? _sleepGuard;
+    private DownloadResult? _result;
+    private string? _error;
+    private string _fileName = string.Empty;
+    private readonly TaskCompletionSource _downloadDone = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        _fileName = Path.GetFileName(Options.BlobUri.LocalPath);
+        _sleepGuard = SleepPrevention.Prevent();
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(
+            Lifetime.ApplicationStopping);
+
+        // Start the periodic refresh (fire-and-forget)
+        _ = RefreshLoopAsync(_cts.Token);
+
+        // Start the download (fire-and-forget, result captured)
+        _ = RunDownloadAsync(_cts.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(500, ct);
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task RunDownloadAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await Orchestrator.DownloadAsync(Progress, ct);
+            _result = result;
+            Progress.FileName = Path.GetFileName(result.OutputPath);
+        }
+        catch (OperationCanceledException)
+        {
+            _error = "Download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            // Signal that the orchestrator is done (including manifest save)
+            _downloadDone.TrySetResult();
+        }
+
+        // Set non-zero exit code on failure
+        if (_error is not null || _result?.Success == false)
+            Environment.ExitCode = 1;
+
+        // Stop the refresh timer and render the final state
+        try { await _cts!.CancelAsync(); } catch { }
+        StateHasChanged();
+
+        // Brief pause so the user sees the final state, then exit
+        try { await Task.Delay(2000, ct); }
+        catch (OperationCanceledException) { }
+        Lifetime.StopApplication();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+
+        // Wait for the orchestrator to finish cleanup (manifest save)
+        // before the host terminates the process
+        await _downloadDone.Task.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+
+        _cts?.Dispose();
+        _sleepGuard?.Dispose();
+    }
+}
+
+<Rows>
+    <Markup Content="@_fileName" Decoration="@Decoration.Bold" />
+
+    @if (_result is not null)
+    {
+        @if (_result.Success)
+        {
+            <Panel Title="Complete" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Green">
+                <Rows>
+                    <Markup Content="@($"Download complete: {_result.OutputPath}")" Foreground="@Color.Green" />
+                    <Markup Content="@($"  Size:       {ByteFormatter.Format(_result.TotalBytes)}")" />
+                    <Markup Content="@($"  Download:   {_result.DownloadDuration.Humanize(2)}")" />
+                    <Markup Content="@($"  Assembly:   {_result.AssemblyDuration.Humanize(2)}")" />
+                    <Markup Content="@($"  Validation: {_result.ValidationDuration.Humanize(2)}")" />
+                    <Markup Content="@($"  Total:      {_result.TotalDuration.Humanize(2)}")" />
+                </Rows>
+            </Panel>
+        }
+        else
+        {
+            <Panel Title="Failed" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
+                <Markup Content="@($"Download failed: {_result.Error?.Message}")" Foreground="@Color.Red" />
+            </Panel>
+        }
+    }
+    else if (_error is not null)
+    {
+        <Panel Title="Error" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
+            <Markup Content="@_error" Foreground="@Color.Red" />
+        </Panel>
+    }
+    else
+    {
+        <Panel Title="┨Download Status┠" Border="BoxBorder.Rounded" Expand="false" BorderColor="@Color.SteelBlue1">
+            <DownloadPanel Progress="@Progress" />
+        </Panel>
+        <Panel Title="┨Assembly Status┠" Border="BoxBorder.Rounded" Expand="false" BorderColor="@Color.SpringGreen1">
+            <AssemblyPanel Progress="@Progress" />
+        </Panel>
+    }
+</Rows>

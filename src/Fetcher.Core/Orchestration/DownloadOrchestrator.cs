@@ -52,24 +52,27 @@ public sealed class DownloadOrchestrator
 
             // 3. Check for existing manifest (resume) or completed file
             var manifestPath = DownloadManifest.GetManifestPath(outputPath);
-            var hasManifest = File.Exists(manifestPath);
+            var existingManifest = await DownloadManifest.LoadAsync(manifestPath, ct);
 
-            // Only treat the file as "already complete" if there's no manifest.
-            // A manifest means a previous download/assembly didn't finish — resume it.
-            if (!hasManifest && File.Exists(outputPath))
+            // Only treat the file as "already complete" if there's no valid manifest
+            // AND no chunk temp files on disk (which indicate a partial download).
+            // A manifest or temp files mean a previous session didn't finish — resume it.
+            if (existingManifest is null && File.Exists(outputPath))
             {
                 var existingSize = new FileInfo(outputPath).Length;
-                if (existingSize == metadata.ContentLength)
+                var hasChunkFiles = HasChunkFiles(outputPath);
+                if (existingSize == metadata.ContentLength && !hasChunkFiles)
                     throw new FileAlreadyExistsException(outputPath, existingSize);
             }
 
             // 4. Load or create manifest
-            manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, ct);
+            manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, existingManifest, ct);
 
             // 5. Report metadata and seed progress with existing chunk state (for resume)
             progress?.ReportMetadata(manifest.TotalSize, manifest.Chunks.Count);
             foreach (var chunk in manifest.Chunks)
             {
+                progress?.ReportChunkInfo(chunk.Index, chunk.Length);
                 if (chunk.BytesWritten > 0)
                     progress?.ReportBytesWritten(chunk.Index, chunk.BytesWritten);
                 if (chunk.IsComplete)
@@ -273,10 +276,9 @@ public sealed class DownloadOrchestrator
     }
 
     private async Task<DownloadManifest> LoadOrCreateManifestAsync(
-        string manifestPath, BlobMetadata metadata, string outputPath, CancellationToken ct)
+        string manifestPath, BlobMetadata metadata, string outputPath,
+        DownloadManifest? existing, CancellationToken ct)
     {
-        var existing = await DownloadManifest.LoadAsync(manifestPath, ct);
-
         if (existing is not null
             && existing.BlobUri == _options.BlobUri
             && existing.TotalSize == metadata.ContentLength
@@ -306,7 +308,7 @@ public sealed class DownloadOrchestrator
             });
         }
 
-        return new DownloadManifest
+        var manifest = new DownloadManifest
         {
             BlobUri = _options.BlobUri,
             TotalSize = metadata.ContentLength,
@@ -314,6 +316,12 @@ public sealed class DownloadOrchestrator
             ChunkSizeBytes = (int)chunkSize,
             Chunks = chunks
         };
+
+        // Pick up any existing chunk temp files from a previous interrupted session
+        // (e.g., process was killed before manifest could be saved)
+        manifest.SyncBytesWrittenFromDisk();
+
+        return manifest;
     }
 
     internal static long ComputeChunkSize(long totalSize, int maxConcurrency, int maxChunkSizeBytes)
@@ -325,6 +333,20 @@ public sealed class DownloadOrchestrator
         var chunkSize = (long)Math.Ceiling((double)totalSize / maxConcurrency);
         chunkSize = Math.Min(chunkSize, maxChunkSizeBytes);
         return Math.Max(chunkSize, 1);
+    }
+
+    private static bool HasChunkFiles(string outputPath)
+    {
+        var dir = Path.GetDirectoryName(outputPath);
+        if (string.IsNullOrEmpty(dir))
+            dir = ".";
+        if (!Directory.Exists(dir))
+            return false;
+
+        var prefix = Path.GetFileName(outputPath) + ".";
+        return Directory.EnumerateFiles(dir, prefix + "??????")
+            .Any(f => Path.GetExtension(f).Length == 7
+                       && int.TryParse(Path.GetExtension(f).AsSpan(1), out _));
     }
 
     internal static string ResolveOutputPath(string localPath, Uri blobUri)

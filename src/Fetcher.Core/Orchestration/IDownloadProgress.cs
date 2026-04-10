@@ -13,6 +13,7 @@ public enum DownloadPhase
 public interface IDownloadProgress
 {
     void ReportMetadata(long totalSize, int totalChunks);
+    void ReportChunkInfo(int chunkIndex, long length);
     void ReportBytesWritten(int chunkIndex, long totalBytesWritten);
     void ReportChunkCompleted(int chunkIndex);
     void ReportChunkAssembled(int chunkIndex);
