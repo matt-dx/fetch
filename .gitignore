@@ -38,8 +38,8 @@ ehthumbs.db
 Desktop.ini
 .DS_Store
 
-## Fetcher download artifacts
-*.fetcher-manifest.json
+## Fetch download artifacts
+*.fetch-manifest.json
 *.bak
 design.md
 design-ui.md
