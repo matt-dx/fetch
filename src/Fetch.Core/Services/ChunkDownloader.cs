@@ -70,6 +70,10 @@ public sealed class ChunkDownloader : IChunkDownloader
             chunk.TempFilePath, fileMode, FileAccess.Write, FileShare.None,
             _options.BufferSizeBytes, FileOptions.Asynchronous);
 
+        // Set hidden attribute on newly created chunk files
+        if (fileMode == FileMode.Create)
+            ChunkNaming.SetHiddenAttribute(chunk.TempFilePath, !_options.ShowChunks);
+
         var buffer = new byte[_options.BufferSizeBytes];
         int bytesRead;
 

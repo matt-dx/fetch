@@ -12,4 +12,5 @@ public sealed record DownloadOptions
     public TimeSpan RetryBaseDelay { get; init; } = TimeSpan.FromSeconds(2);
     public bool WriteDebugManifest { get; init; } = false;
     public bool WaitForDownload { get; init; } = false;
+    public bool ShowChunks { get; init; } = false;
 }

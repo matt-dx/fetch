@@ -121,4 +121,23 @@ public sealed class ProgressReporter : IDownloadProgress
     }
 
     public string? LastError { get; private set; }
+
+    /// <summary>
+    /// Resets all state so the reporter can be reused for the next download in a queue.
+    /// </summary>
+    public void Reset()
+    {
+        _chunkBytes.Clear();
+        _chunkLengths.Clear();
+        _chunkCompleted.Clear();
+        _chunkAssembled.Clear();
+        _stopwatch.Reset();
+        Interlocked.Exchange(ref _totalBytesWritten, 0);
+        Interlocked.Exchange(ref _resumedBytes, 0);
+        CurrentPhase = DownloadPhase.Preparing;
+        TotalSize = 0;
+        TotalChunks = 0;
+        FileName = null;
+        LastError = null;
+    }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Fetch.Core.Services;
 
 namespace Fetch.Core.Models;
 
@@ -63,13 +64,13 @@ public sealed class DownloadManifest
         }
     }
 
-    public static string GetManifestPath(string outputFilePath)
-        => $"{outputFilePath}.fetch-manifest.json";
+    public static string GetManifestPath(string outputFilePath, bool hidden)
+        => ChunkNaming.GetManifestPath(outputFilePath, hidden);
 
-    public void AssignTempFilePaths(string outputFilePath)
+    public void AssignTempFilePaths(string outputFilePath, bool hidden)
     {
         foreach (var chunk in Chunks)
-            chunk.TempFilePath = $"{outputFilePath}.{chunk.Index:D6}";
+            chunk.TempFilePath = ChunkNaming.GetChunkPath(outputFilePath, chunk.Index, hidden);
     }
 
     public void SyncBytesWrittenFromDisk()

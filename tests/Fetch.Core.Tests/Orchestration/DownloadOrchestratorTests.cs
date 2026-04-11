@@ -31,9 +31,23 @@ public class DownloadOrchestratorTests : IDisposable
         _validator = Substitute.For<IIntegrityValidator>();
         _progress = Substitute.For<IDownloadProgress>();
 
-        // Default: streaming assembly returns a mock session
+        // Default: streaming assembly returns a mock session and creates the .part file
         _fileAssembler.BeginAssembly(Arg.Any<string>(), Arg.Any<long>())
-            .Returns(_assemblySession);
+            .Returns(callInfo =>
+            {
+                var path = callInfo.ArgAt<string>(0);
+                File.Create(path).Dispose();
+                return _assemblySession;
+            });
+
+        // Default: batch assembly creates the .part file
+        _fileAssembler.AssembleAsync(Arg.Any<string>(), Arg.Any<DownloadManifest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var path = callInfo.ArgAt<string>(0);
+                File.Create(path).Dispose();
+                return Task.CompletedTask;
+            });
     }
 
     public void Dispose()

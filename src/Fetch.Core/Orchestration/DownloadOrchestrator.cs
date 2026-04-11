@@ -40,6 +40,9 @@ public sealed class DownloadOrchestrator
         string outputPath = string.Empty;
         DownloadManifest? manifest = null;
 
+        var hidden = !_options.ShowChunks;
+        string manifestPath = string.Empty;
+
         try
         {
             progress?.ReportPhaseChanged(DownloadPhase.Preparing);
@@ -49,24 +52,34 @@ public sealed class DownloadOrchestrator
 
             // 2. Resolve output path
             outputPath = ResolveOutputPath(_options.LocalPath, _options.BlobUri);
+            var assemblyPath = outputPath + ".part";
 
             // 3. Check for existing manifest (resume) or completed file
-            var manifestPath = DownloadManifest.GetManifestPath(outputPath);
+            manifestPath = ChunkNaming.FindExistingManifest(outputPath, hidden)
+                ?? DownloadManifest.GetManifestPath(outputPath, hidden);
             var existingManifest = await DownloadManifest.LoadAsync(manifestPath, ct);
 
-            // Only treat the file as "already complete" if there's no valid manifest
-            // AND no chunk temp files on disk (which indicate a partial download).
-            // A manifest or temp files mean a previous session didn't finish — resume it.
-            if (existingManifest is null && File.Exists(outputPath))
+            // Only treat the file as "already complete" if there's no valid manifest,
+            // no chunk temp files, and no .part file on disk.
+            if (existingManifest is null && File.Exists(outputPath) && !File.Exists(assemblyPath))
             {
                 var existingSize = new FileInfo(outputPath).Length;
-                var hasChunkFiles = HasChunkFiles(outputPath);
+                var hasChunkFiles = ChunkNaming.FindExistingChunks(outputPath).Any();
                 if (existingSize == metadata.ContentLength && !hasChunkFiles)
                     throw new FileAlreadyExistsException(outputPath, existingSize);
             }
 
-            // 4. Load or create manifest
-            manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, existingManifest, ct);
+            // 4. Load or create manifest (assigns desired chunk paths but does NOT sync bytes yet)
+            manifest = await LoadOrCreateManifestAsync(metadata, outputPath, existingManifest, ct);
+
+            // Migrate chunk/manifest files on disk to match current --ShowChunks setting.
+            // This renames any files that were created with the opposite visibility convention
+            // (e.g., hidden ".file.000001" → visible "file.000001" or vice versa).
+            // Must happen BEFORE SyncBytesWrittenFromDisk so the files are at the expected paths.
+            manifestPath = ChunkNaming.MigrateVisibility(manifest, outputPath, manifestPath, hidden);
+
+            // Now that files are at the correct paths, pick up actual bytes on disk
+            manifest.SyncBytesWrittenFromDisk();
 
             // 5. Report metadata and seed progress with existing chunk state (for resume)
             progress?.ReportMetadata(manifest.TotalSize, manifest.Chunks.Count);
@@ -94,31 +107,33 @@ public sealed class DownloadOrchestrator
 
                 // Save manifest before batch assembly
                 await manifest.SaveAsync(manifestPath, ct);
+                ChunkNaming.SetHiddenAttribute(manifestPath, hidden);
 
-                // Batch assemble
+                // Batch assemble into .part file
                 progress?.ReportPhaseChanged(DownloadPhase.Assembling);
                 var assemblyStopwatch = Stopwatch.StartNew();
-                await _fileAssembler.AssembleAsync(outputPath, manifest, ct);
+                await _fileAssembler.AssembleAsync(assemblyPath, manifest, ct);
                 assemblyDuration = assemblyStopwatch.Elapsed;
             }
             else
             {
-                await DownloadAndAssembleAsync(manifest, outputPath, progress, ct);
+                await DownloadAndAssembleAsync(manifest, assemblyPath, progress, ct);
                 downloadDuration = downloadStopwatch.Elapsed;
                 // Assembly happened concurrently; its time is included in downloadDuration
                 assemblyDuration = TimeSpan.Zero;
 
                 // Save manifest (will be deleted shortly on success)
                 await manifest.SaveAsync(manifestPath, ct);
+                ChunkNaming.SetHiddenAttribute(manifestPath, hidden);
             }
 
-            // 7. Validate
+            // 7. Validate against the .part file
             if (metadata.ContentHash.Length > 0)
             {
                 progress?.ReportPhaseChanged(DownloadPhase.Validating);
                 var validationStopwatch = Stopwatch.StartNew();
 
-                var isValid = await _validator.ValidateAsync(outputPath, metadata.ContentHash, ct);
+                var isValid = await _validator.ValidateAsync(assemblyPath, metadata.ContentHash, ct);
                 validationDuration = validationStopwatch.Elapsed;
 
                 if (!isValid)
@@ -129,7 +144,10 @@ public sealed class DownloadOrchestrator
                 }
             }
 
-            // 8. Cleanup manifest on success
+            // 8. Rename .part to final output
+            File.Move(assemblyPath, outputPath, overwrite: true);
+
+            // 9. Cleanup manifest on success
             if (File.Exists(manifestPath))
                 File.Delete(manifestPath);
 
@@ -155,8 +173,10 @@ public sealed class DownloadOrchestrator
             {
                 try
                 {
-                    var manifestPath = DownloadManifest.GetManifestPath(outputPath);
+                    if (string.IsNullOrEmpty(manifestPath))
+                        manifestPath = DownloadManifest.GetManifestPath(outputPath, hidden);
                     await manifest.SaveAsync(manifestPath, CancellationToken.None);
+                    ChunkNaming.SetHiddenAttribute(manifestPath, hidden);
                 }
                 catch
                 {
@@ -183,13 +203,13 @@ public sealed class DownloadOrchestrator
     /// using a Channel as a producer-consumer queue.
     /// </summary>
     private async Task DownloadAndAssembleAsync(
-        DownloadManifest manifest, string outputPath,
+        DownloadManifest manifest, string assemblyPath,
         IDownloadProgress? progress, CancellationToken ct)
     {
         var incompleteChunks = manifest.Chunks.Where(c => !c.IsComplete).ToList();
 
-        // Open the output file for streaming assembly
-        using var session = _fileAssembler.BeginAssembly(outputPath, manifest.TotalSize);
+        // Open the .part file for streaming assembly
+        using var session = _fileAssembler.BeginAssembly(assemblyPath, manifest.TotalSize);
 
         // First, assemble any chunks that were downloaded but not yet assembled (resume case)
         var downloadedButNotAssembled = manifest.Chunks
@@ -276,16 +296,19 @@ public sealed class DownloadOrchestrator
     }
 
     private async Task<DownloadManifest> LoadOrCreateManifestAsync(
-        string manifestPath, BlobMetadata metadata, string outputPath,
+        BlobMetadata metadata, string outputPath,
         DownloadManifest? existing, CancellationToken ct)
     {
+        var hidden = !_options.ShowChunks;
+
         if (existing is not null
             && existing.BlobUri == _options.BlobUri
             && existing.TotalSize == metadata.ContentLength
             && existing.ContentHash.AsSpan().SequenceEqual(metadata.ContentHash))
         {
-            existing.AssignTempFilePaths(outputPath);
-            existing.SyncBytesWrittenFromDisk();
+            // Assign desired paths (hidden or visible) — actual file migration
+            // and byte sync happen after MigrateVisibility in the caller
+            existing.AssignTempFilePaths(outputPath, hidden);
             return existing;
         }
 
@@ -304,11 +327,11 @@ public sealed class DownloadOrchestrator
                 Index = i,
                 Offset = offset,
                 Length = length,
-                TempFilePath = $"{outputPath}.{i:D6}"
+                TempFilePath = ChunkNaming.GetChunkPath(outputPath, i, hidden)
             });
         }
 
-        var manifest = new DownloadManifest
+        return new DownloadManifest
         {
             BlobUri = _options.BlobUri,
             TotalSize = metadata.ContentLength,
@@ -316,12 +339,6 @@ public sealed class DownloadOrchestrator
             ChunkSizeBytes = (int)chunkSize,
             Chunks = chunks
         };
-
-        // Pick up any existing chunk temp files from a previous interrupted session
-        // (e.g., process was killed before manifest could be saved)
-        manifest.SyncBytesWrittenFromDisk();
-
-        return manifest;
     }
 
     internal static long ComputeChunkSize(long totalSize, int maxConcurrency, int maxChunkSizeBytes)
@@ -333,20 +350,6 @@ public sealed class DownloadOrchestrator
         var chunkSize = (long)Math.Ceiling((double)totalSize / maxConcurrency);
         chunkSize = Math.Min(chunkSize, maxChunkSizeBytes);
         return Math.Max(chunkSize, 1);
-    }
-
-    private static bool HasChunkFiles(string outputPath)
-    {
-        var dir = Path.GetDirectoryName(outputPath);
-        if (string.IsNullOrEmpty(dir))
-            dir = ".";
-        if (!Directory.Exists(dir))
-            return false;
-
-        var prefix = Path.GetFileName(outputPath) + ".";
-        return Directory.EnumerateFiles(dir, prefix + "??????")
-            .Any(f => Path.GetExtension(f).Length == 7
-                       && int.TryParse(Path.GetExtension(f).AsSpan(1), out _));
     }
 
     internal static string ResolveOutputPath(string localPath, Uri blobUri)
