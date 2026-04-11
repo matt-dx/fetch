@@ -1,25 +1,29 @@
 @using Fetch.Cli.Platform
+@using Fetch.Core.Services
 @using Humanizer
 @using Microsoft.Extensions.Hosting
 @implements IAsyncDisposable
 @inject ProgressReporter Progress
 @inject DownloadOptions Options
-@inject DownloadOrchestrator Orchestrator
+@inject Uri[] Uris
 @inject IHostApplicationLifetime Lifetime
 
 @code {
     private CancellationTokenSource? _cts;
     private IDisposable? _sleepGuard;
-    private DownloadResult? _result;
+    private readonly List<DownloadResult> _results = [];
     private string? _error;
     private string _fileName = string.Empty;
+    private int _currentIndex;
+    private int _totalDownloads;
     private readonly TaskCompletionSource _downloadDone = new();
 
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
 
-        _fileName = Path.GetFileName(Options.BlobUri.LocalPath);
+        _totalDownloads = Uris.Length;
+        _fileName = Path.GetFileName(Uris[0].LocalPath);
         _sleepGuard = SleepPrevention.Prevent();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(
             Lifetime.ApplicationStopping);
@@ -27,8 +31,8 @@
         // Start the periodic refresh (fire-and-forget)
         _ = RefreshLoopAsync(_cts.Token);
 
-        // Start the download (fire-and-forget, result captured)
-        _ = RunDownloadAsync(_cts.Token);
+        // Start the download queue (fire-and-forget, results captured)
+        _ = RunDownloadQueueAsync(_cts.Token);
     }
 
     private async Task RefreshLoopAsync(CancellationToken ct)
@@ -44,13 +48,32 @@
         catch (OperationCanceledException) { }
     }
 
-    private async Task RunDownloadAsync(CancellationToken ct)
+    private async Task RunDownloadQueueAsync(CancellationToken ct)
     {
         try
         {
-            var result = await Orchestrator.DownloadAsync(Progress, ct);
-            _result = result;
-            Progress.FileName = Path.GetFileName(result.OutputPath);
+            for (var i = 0; i < Uris.Length; i++)
+            {
+                _currentIndex = i;
+                var uri = Uris[i];
+                _fileName = Path.GetFileName(uri.LocalPath);
+
+                if (i > 0)
+                    Progress.Reset();
+
+                // Build per-download options and services
+                var perOptions = Options with { BlobUri = uri };
+                var blobService = new AzureBlobService(perOptions);
+                var chunkDownloader = new ChunkDownloader(perOptions);
+                var fileAssembler = new FileAssembler(perOptions);
+                var validator = new Md5Validator();
+                var orchestrator = new DownloadOrchestrator(
+                    blobService, chunkDownloader, fileAssembler, validator, perOptions);
+
+                var result = await orchestrator.DownloadAsync(Progress, ct);
+                _results.Add(result);
+                Progress.FileName = Path.GetFileName(result.OutputPath);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -62,12 +85,12 @@
         }
         finally
         {
-            // Signal that the orchestrator is done (including manifest save)
+            // Signal that all downloads are done (including manifest save)
             _downloadDone.TrySetResult();
         }
 
         // Set non-zero exit code on failure
-        if (_error is not null || _result?.Success == false)
+        if (_error is not null || _results.Any(r => !r.Success))
             Environment.ExitCode = 1;
 
         // Stop the refresh timer and render the final state
@@ -94,35 +117,46 @@
 }
 
 <Rows>
-    <Markup Content="@_fileName" Decoration="@Decoration.Bold" />
-
-    @if (_result is not null)
+    @if (_totalDownloads > 1)
     {
-        @if (_result.Success)
-        {
-            <Panel Title="Complete" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Green">
-                <Rows>
-                    <Markup Content="@($"Download complete: {_result.OutputPath}")" Foreground="@Color.Green" />
-                    <Markup Content="@($"  Size:       {ByteFormatter.Format(_result.TotalBytes)}")" />
-                    <Markup Content="@($"  Download:   {_result.DownloadDuration.Humanize(2)}")" />
-                    <Markup Content="@($"  Assembly:   {_result.AssemblyDuration.Humanize(2)}")" />
-                    <Markup Content="@($"  Validation: {_result.ValidationDuration.Humanize(2)}")" />
-                    <Markup Content="@($"  Total:      {_result.TotalDuration.Humanize(2)}")" />
-                </Rows>
-            </Panel>
-        }
-        else
-        {
-            <Panel Title="Failed" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
-                <Markup Content="@($"Download failed: {_result.Error?.Message}")" Foreground="@Color.Red" />
-            </Panel>
-        }
+        <Markup Content="@($"[{_currentIndex + 1}/{_totalDownloads}] {_fileName}")" Decoration="@Decoration.Bold" />
     }
-    else if (_error is not null)
+    else
     {
-        <Panel Title="Error" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
-            <Markup Content="@_error" Foreground="@Color.Red" />
-        </Panel>
+        <Markup Content="@_fileName" Decoration="@Decoration.Bold" />
+    }
+
+    @if (_results.Count == _totalDownloads || _error is not null)
+    {
+        @* All downloads finished — show summary *@
+        @foreach (var result in _results)
+        {
+            @if (result.Success)
+            {
+                <Panel Title="Complete" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Green">
+                    <Rows>
+                        <Markup Content="@($"Download complete: {result.OutputPath}")" Foreground="@Color.Green" />
+                        <Markup Content="@($"  Size:       {ByteFormatter.Format(result.TotalBytes)}")" />
+                        <Markup Content="@($"  Download:   {result.DownloadDuration.Humanize(2)}")" />
+                        <Markup Content="@($"  Assembly:   {result.AssemblyDuration.Humanize(2)}")" />
+                        <Markup Content="@($"  Validation: {result.ValidationDuration.Humanize(2)}")" />
+                        <Markup Content="@($"  Total:      {result.TotalDuration.Humanize(2)}")" />
+                    </Rows>
+                </Panel>
+            }
+            else
+            {
+                <Panel Title="Failed" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
+                    <Markup Content="@($"Download failed: {result.Error?.Message}")" Foreground="@Color.Red" />
+                </Panel>
+            }
+        }
+        @if (_error is not null)
+        {
+            <Panel Title="Error" Border="BoxBorder.Rounded" Expand="true" BorderColor="@Color.Red">
+                <Markup Content="@_error" Foreground="@Color.Red" />
+            </Panel>
+        }
     }
     else
     {

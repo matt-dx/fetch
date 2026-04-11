@@ -125,7 +125,7 @@ public class DownloadManifestTests : IDisposable
     }
 
     [Fact]
-    public void AssignTempFilePaths_SetsCorrectPaths()
+    public void AssignTempFilePaths_Hidden_SetsCorrectPaths()
     {
         var manifest = new DownloadManifest
         {
@@ -137,17 +137,46 @@ public class DownloadManifestTests : IDisposable
             ]
         };
 
-        manifest.AssignTempFilePaths("/output/file.zip");
+        manifest.AssignTempFilePaths("/output/file.zip", hidden: true);
 
-        manifest.Chunks[0].TempFilePath.Should().Be("/output/file.zip.000000");
-        manifest.Chunks[1].TempFilePath.Should().Be("/output/file.zip.000001");
-        manifest.Chunks[2].TempFilePath.Should().Be("/output/file.zip.000012");
+        manifest.Chunks[0].TempFilePath.Should().EndWith(".file.zip.000000");
+        manifest.Chunks[1].TempFilePath.Should().EndWith(".file.zip.000001");
+        manifest.Chunks[2].TempFilePath.Should().EndWith(".file.zip.000012");
     }
 
     [Fact]
-    public void GetManifestPath_ReturnsCorrectPath()
+    public void AssignTempFilePaths_Visible_SetsCorrectPaths()
     {
-        DownloadManifest.GetManifestPath("/output/file.zip")
-            .Should().Be("/output/file.zip.fetch-manifest.json");
+        var manifest = new DownloadManifest
+        {
+            Chunks =
+            [
+                new ChunkState { Index = 0 },
+                new ChunkState { Index = 1 },
+                new ChunkState { Index = 12 }
+            ]
+        };
+
+        manifest.AssignTempFilePaths("/output/file.zip", hidden: false);
+
+        manifest.Chunks[0].TempFilePath.Should().EndWith("file.zip.000000");
+        manifest.Chunks[1].TempFilePath.Should().EndWith("file.zip.000001");
+        manifest.Chunks[2].TempFilePath.Should().EndWith("file.zip.000012");
+        // Ensure no dot prefix
+        Path.GetFileName(manifest.Chunks[0].TempFilePath).Should().StartWith("file.zip");
+    }
+
+    [Fact]
+    public void GetManifestPath_Hidden_ReturnsCorrectPath()
+    {
+        var result = DownloadManifest.GetManifestPath("/output/file.zip", hidden: true);
+        Path.GetFileName(result).Should().Be(".file.zip.fetch-manifest.json");
+    }
+
+    [Fact]
+    public void GetManifestPath_Visible_ReturnsCorrectPath()
+    {
+        var result = DownloadManifest.GetManifestPath("/output/file.zip", hidden: false);
+        Path.GetFileName(result).Should().Be("file.zip.fetch-manifest.json");
     }
 }
