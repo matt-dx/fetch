@@ -72,18 +72,23 @@ public static class ChunkNaming
 
     /// <summary>
     /// Finds an existing manifest file (hidden or visible) for the given output path.
-    /// Returns the path if found, or null.
+    /// Prefers the manifest matching the desired <paramref name="hidden"/> setting,
+    /// then falls back to the other variant. Returns the path if found, or null.
     /// </summary>
-    public static string? FindExistingManifest(string outputFilePath)
+    public static string? FindExistingManifest(string outputFilePath, bool hidden)
     {
         var dir = Path.GetDirectoryName(outputFilePath) ?? ".";
         var fileName = Path.GetFileName(outputFilePath);
 
-        var visible = Path.Combine(dir, $"{fileName}.fetch-manifest.json");
-        if (File.Exists(visible)) return visible;
+        var visiblePath = Path.Combine(dir, $"{fileName}.fetch-manifest.json");
+        var hiddenPath = Path.Combine(dir, $".{fileName}.fetch-manifest.json");
 
-        var hidden = Path.Combine(dir, $".{fileName}.fetch-manifest.json");
-        if (File.Exists(hidden)) return hidden;
+        // Check preferred variant first, then fall back to the other
+        var preferred = hidden ? hiddenPath : visiblePath;
+        var fallback = hidden ? visiblePath : hiddenPath;
+
+        if (File.Exists(preferred)) return preferred;
+        if (File.Exists(fallback)) return fallback;
 
         return null;
     }
@@ -92,6 +97,9 @@ public static class ChunkNaming
     /// Migrates chunk and manifest files to match the desired visibility.
     /// Scans the disk for existing chunk files at both hidden and visible paths,
     /// renames them to the desired convention, and sets/clears hidden attributes.
+    /// Handles duplicates: if both hidden and visible variants exist for the same
+    /// chunk, the one at the wrong path is deleted after confirming the desired
+    /// path already has the file.
     /// Updates chunk.TempFilePath on each chunk in the manifest.
     /// Returns the (possibly updated) manifest path.
     /// </summary>
@@ -108,15 +116,24 @@ public static class ChunkNaming
         {
             var desiredPath = GetChunkPath(outputFilePath, chunk.Index, hidden);
 
-            // Find any existing file for this chunk index (at the "wrong" path)
             if (existingOnDisk.Contains(chunk.Index))
             {
                 foreach (var (existingPath, _, _) in existingOnDisk[chunk.Index])
                 {
-                    if (existingPath != desiredPath && File.Exists(existingPath))
+                    if (existingPath == desiredPath)
+                        continue; // Already at the right path
+
+                    if (File.Exists(existingPath))
                     {
-                        File.Move(existingPath, desiredPath, overwrite: false);
-                        break; // Only one source file per chunk index
+                        if (File.Exists(desiredPath))
+                        {
+                            // Both variants exist — keep the desired one, delete the stale copy
+                            File.Delete(existingPath);
+                        }
+                        else
+                        {
+                            File.Move(existingPath, desiredPath);
+                        }
                     }
                 }
             }
@@ -131,7 +148,16 @@ public static class ChunkNaming
         var desiredManifestPath = GetManifestPath(outputFilePath, hidden);
         if (currentManifestPath != desiredManifestPath && File.Exists(currentManifestPath))
         {
-            File.Move(currentManifestPath, desiredManifestPath, overwrite: false);
+            if (File.Exists(desiredManifestPath))
+            {
+                // Both variants exist — keep the desired one, delete the stale copy
+                File.Delete(currentManifestPath);
+            }
+            else
+            {
+                File.Move(currentManifestPath, desiredManifestPath);
+            }
+
             SetHiddenAttribute(desiredManifestPath, hidden);
         }
         else if (File.Exists(desiredManifestPath))

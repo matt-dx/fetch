@@ -55,7 +55,7 @@ public sealed class DownloadOrchestrator
             var assemblyPath = outputPath + ".part";
 
             // 3. Check for existing manifest (resume) or completed file
-            manifestPath = ChunkNaming.FindExistingManifest(outputPath)
+            manifestPath = ChunkNaming.FindExistingManifest(outputPath, hidden)
                 ?? DownloadManifest.GetManifestPath(outputPath, hidden);
             var existingManifest = await DownloadManifest.LoadAsync(manifestPath, ct);
 
@@ -70,7 +70,7 @@ public sealed class DownloadOrchestrator
             }
 
             // 4. Load or create manifest (assigns desired chunk paths but does NOT sync bytes yet)
-            manifest = await LoadOrCreateManifestAsync(manifestPath, metadata, outputPath, existingManifest, ct);
+            manifest = await LoadOrCreateManifestAsync(metadata, outputPath, existingManifest, ct);
 
             // Migrate chunk/manifest files on disk to match current --ShowChunks setting.
             // This renames any files that were created with the opposite visibility convention
@@ -296,7 +296,7 @@ public sealed class DownloadOrchestrator
     }
 
     private async Task<DownloadManifest> LoadOrCreateManifestAsync(
-        string manifestPath, BlobMetadata metadata, string outputPath,
+        BlobMetadata metadata, string outputPath,
         DownloadManifest? existing, CancellationToken ct)
     {
         var hidden = !_options.ShowChunks;

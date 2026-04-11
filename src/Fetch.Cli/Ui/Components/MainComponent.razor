@@ -1,11 +1,12 @@
 @using Fetch.Cli.Platform
-@using Fetch.Core.Services
+@using Fetch.Core.Exceptions
 @using Humanizer
 @using Microsoft.Extensions.Hosting
 @implements IAsyncDisposable
 @inject ProgressReporter Progress
 @inject DownloadOptions Options
 @inject Uri[] Uris
+@inject IOrchestratorFactory OrchestratorFactory
 @inject IHostApplicationLifetime Lifetime
 
 @code {
@@ -61,18 +62,34 @@
                 if (i > 0)
                     Progress.Reset();
 
-                // Build per-download options and services
-                var perOptions = Options with { BlobUri = uri };
-                var blobService = new AzureBlobService(perOptions);
-                var chunkDownloader = new ChunkDownloader(perOptions);
-                var fileAssembler = new FileAssembler(perOptions);
-                var validator = new Md5Validator();
-                var orchestrator = new DownloadOrchestrator(
-                    blobService, chunkDownloader, fileAssembler, validator, perOptions);
+                try
+                {
+                    var perOptions = Options with { BlobUri = uri };
+                    var orchestrator = OrchestratorFactory.Create(perOptions);
 
-                var result = await orchestrator.DownloadAsync(Progress, ct);
-                _results.Add(result);
-                Progress.FileName = Path.GetFileName(result.OutputPath);
+                    var result = await orchestrator.DownloadAsync(Progress, ct);
+                    _results.Add(result);
+                    Progress.FileName = Path.GetFileName(result.OutputPath);
+                }
+                catch (FileAlreadyExistsException ex)
+                {
+                    // Record as a non-fatal failure so the queue continues
+                    _results.Add(new DownloadResult
+                    {
+                        Success = false,
+                        OutputPath = ex.FilePath,
+                        Error = ex
+                    });
+                }
+                catch (BlobNotFoundException ex)
+                {
+                    _results.Add(new DownloadResult
+                    {
+                        Success = false,
+                        OutputPath = uri.ToString(),
+                        Error = ex
+                    });
+                }
             }
         }
         catch (OperationCanceledException)

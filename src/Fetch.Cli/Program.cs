@@ -72,11 +72,7 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(uris);
 builder.Services.AddSingleton<ProgressReporter>();
-builder.Services.AddSingleton<IBlobService, AzureBlobService>();
-builder.Services.AddSingleton<IChunkDownloader, ChunkDownloader>();
-builder.Services.AddSingleton<IFileAssembler, FileAssembler>();
-builder.Services.AddSingleton<IIntegrityValidator, Md5Validator>();
-builder.Services.AddSingleton<DownloadOrchestrator>();
+builder.Services.AddSingleton<IOrchestratorFactory, OrchestratorFactory>();
 
 await builder.Build().RunAsync();
 return Environment.ExitCode;
