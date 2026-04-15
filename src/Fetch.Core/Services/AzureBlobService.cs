@@ -37,7 +37,11 @@ public sealed class AzureBlobService : IBlobService
         }
         else
         {
-            _blobClient = new BlobClient(options.BlobUri, new DefaultAzureCredential(), clientOptions);
+            var credential = new ChainedTokenCredential(
+                new DefaultAzureCredential(),
+                new InteractiveBrowserCredential()
+            );
+            _blobClient = new BlobClient(options.BlobUri, credential, clientOptions);
         }
     }
 
