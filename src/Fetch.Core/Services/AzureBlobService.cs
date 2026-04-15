@@ -37,14 +37,101 @@ public sealed class AzureBlobService : IBlobService
         }
         else
         {
-            var credential = new ChainedTokenCredential(
-                new DefaultAzureCredential(),
-                new InteractiveBrowserCredential()
-            );
+            var credential = new FallbackInteractiveBrowserTokenCredential();
             _blobClient = new BlobClient(options.BlobUri, credential, clientOptions);
         }
     }
 
+    private sealed class FallbackInteractiveBrowserTokenCredential : TokenCredential
+    {
+        private readonly TokenCredential[] _nonInteractiveCredentials =
+        [
+            new EnvironmentCredential(),
+            new WorkloadIdentityCredential(),
+            new ManagedIdentityCredential(),
+            new SharedTokenCacheCredential(),
+            new VisualStudioCredential(),
+            new VisualStudioCodeCredential(),
+            new AzureCliCredential(),
+            new AzurePowerShellCredential(),
+            new AzureDeveloperCliCredential()
+        ];
+
+        private readonly InteractiveBrowserCredential _interactiveCredential = new();
+        private readonly object _syncLock = new();
+        private TokenCredential? _cachedCredential;
+
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            var cachedCredential = _cachedCredential;
+            if (cachedCredential is not null)
+            {
+                return cachedCredential.GetToken(requestContext, cancellationToken);
+            }
+
+            foreach (var credential in _nonInteractiveCredentials)
+            {
+                try
+                {
+                    var token = credential.GetToken(requestContext, cancellationToken);
+                    CacheCredential(credential);
+                    return token;
+                }
+                catch (CredentialUnavailableException)
+                {
+                }
+                catch (AuthenticationFailedException)
+                {
+                }
+            }
+
+            var interactiveToken = _interactiveCredential.GetToken(requestContext, cancellationToken);
+            CacheCredential(_interactiveCredential);
+            return interactiveToken;
+        }
+
+        public override async ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            var cachedCredential = _cachedCredential;
+            if (cachedCredential is not null)
+            {
+                return await cachedCredential.GetTokenAsync(requestContext, cancellationToken);
+            }
+
+            foreach (var credential in _nonInteractiveCredentials)
+            {
+                try
+                {
+                    var token = await credential.GetTokenAsync(requestContext, cancellationToken);
+                    CacheCredential(credential);
+                    return token;
+                }
+                catch (CredentialUnavailableException)
+                {
+                }
+                catch (AuthenticationFailedException)
+                {
+                }
+            }
+
+            var interactiveToken = await _interactiveCredential.GetTokenAsync(requestContext, cancellationToken);
+            CacheCredential(_interactiveCredential);
+            return interactiveToken;
+        }
+
+        private void CacheCredential(TokenCredential credential)
+        {
+            if (_cachedCredential is not null)
+            {
+                return;
+            }
+
+            lock (_syncLock)
+            {
+                _cachedCredential ??= credential;
+            }
+        }
+    }
     public async Task<BlobMetadata> GetBlobMetadataAsync(CancellationToken ct = default)
     {
         try
