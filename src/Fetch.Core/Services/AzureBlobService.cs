@@ -39,7 +39,7 @@ public sealed class AzureBlobService : IBlobService
         {
             var credential = new ChainedTokenCredential(
                 new DefaultAzureCredential(),
-                new InteractiveBrowserCredential()
+                new TimeoutCredential(new InteractiveBrowserCredential(), TimeSpan.FromMinutes(2))
             );
             _blobClient = new BlobClient(options.BlobUri, credential, clientOptions);
         }
