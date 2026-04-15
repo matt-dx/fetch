@@ -16,6 +16,7 @@ var urlArgument = new Argument<Uri[]>("urls", "Azure Blob Storage URL(s)")
 
 var outputOption = new Option<string?>(["-o", "--output"], "Output file or directory");
 var keyOption = new Option<string?>(["-k", "--key"], "Storage account key (omit for DefaultAzureCredential)");
+var interactiveOption = new Option<bool>("--interactive", "Sign in via browser if no non-interactive credential is available");
 var concurrencyOption = new Option<int?>(["-c", "--concurrency"], "Max parallel chunk downloads");
 var chunkSizeOption = new Option<int?>(["-s", "--chunk-size"], "Max chunk size in MB (cap)");
 var waitOption = new Option<bool>("--WaitForDownload", "Download all chunks before assembling (disables streaming assembly)");
@@ -26,6 +27,7 @@ var rootCommand = new RootCommand("Fetch - Azure Blob Storage parallel downloade
 rootCommand.AddArgument(urlArgument);
 rootCommand.AddOption(outputOption);
 rootCommand.AddOption(keyOption);
+rootCommand.AddOption(interactiveOption);
 rootCommand.AddOption(concurrencyOption);
 rootCommand.AddOption(chunkSizeOption);
 rootCommand.AddOption(waitOption);
@@ -43,6 +45,7 @@ if (parseResult.Errors.Any()
 var uris = parseResult.GetValueForArgument(urlArgument);
 var output = parseResult.GetValueForOption(outputOption);
 var key = parseResult.GetValueForOption(keyOption);
+var interactive = parseResult.GetValueForOption(interactiveOption);
 var concurrency = parseResult.GetValueForOption(concurrencyOption);
 var chunkSizeMb = parseResult.GetValueForOption(chunkSizeOption);
 var waitForDownload = parseResult.GetValueForOption(waitOption);
@@ -54,6 +57,7 @@ var options = new DownloadOptions
     BlobUri = uris[0],
     LocalPath = output ?? Directory.GetCurrentDirectory(),
     AccountKey = key,
+    InteractiveAuth = interactive,
     MaxConcurrency = concurrency ?? Math.Min(Environment.ProcessorCount * 4, 32),
     MaxChunkSizeBytes = (chunkSizeMb ?? 256) * 1024 * 1024,
     WaitForDownload = waitForDownload,

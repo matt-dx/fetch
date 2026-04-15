@@ -13,4 +13,5 @@ public sealed record DownloadOptions
     public bool WriteDebugManifest { get; init; } = false;
     public bool WaitForDownload { get; init; } = false;
     public bool ShowChunks { get; init; } = false;
+    public bool InteractiveAuth { get; init; } = false;
 }

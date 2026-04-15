@@ -37,13 +37,18 @@ public sealed class AzureBlobService : IBlobService
         }
         else
         {
-            var credential = new FallbackInteractiveBrowserTokenCredential();
+            var credential = new FallbackInteractiveBrowserTokenCredential(options.InteractiveAuth);
             _blobClient = new BlobClient(options.BlobUri, credential, clientOptions);
         }
     }
 
-    private sealed class FallbackInteractiveBrowserTokenCredential : TokenCredential
+    private sealed class FallbackInteractiveBrowserTokenCredential(bool interactiveAuth) : TokenCredential
     {
+        private const string NoCredentialMessage =
+            "No Azure credential was available. Provide a storage account key with -k, " +
+            "configure a supported non-interactive credential (Azure CLI, environment variables, " +
+            "managed identity, etc.), or add --interactive to sign in via browser.";
+
         private readonly TokenCredential[] _nonInteractiveCredentials =
         [
             new EnvironmentCredential(),
@@ -85,6 +90,11 @@ public sealed class AzureBlobService : IBlobService
                 }
             }
 
+            if (!interactiveAuth)
+            {
+                throw new CredentialUnavailableException(NoCredentialMessage);
+            }
+
             var interactiveToken = _interactiveCredential.GetToken(requestContext, cancellationToken);
             CacheCredential(_interactiveCredential);
             return interactiveToken;
@@ -112,6 +122,11 @@ public sealed class AzureBlobService : IBlobService
                 catch (AuthenticationFailedException)
                 {
                 }
+            }
+
+            if (!interactiveAuth)
+            {
+                throw new CredentialUnavailableException(NoCredentialMessage);
             }
 
             var interactiveToken = await _interactiveCredential.GetTokenAsync(requestContext, cancellationToken);
