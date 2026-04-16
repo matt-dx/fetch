@@ -22,7 +22,7 @@ A .NET 9 console application that downloads large files from Azure Blob Storage 
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or later
 - An Azure Blob Storage account with a blob to download
-- Authentication: either a storage account key or credentials configured for [DefaultAzureCredential](https://learn.microsoft.com/en-us/dotnet/azure/sdk/authentication/)
+- Authentication: a storage account key, credentials configured for [DefaultAzureCredential](https://learn.microsoft.com/en-us/dotnet/azure/sdk/authentication/), or interactive browser login
 
 ## Building
 
@@ -46,7 +46,7 @@ Arguments:
 
 Options:
   -o, --output <path>        Output file or directory [default: current directory]
-  -k, --key <key>            Storage account key (omit for DefaultAzureCredential)
+  -k, --key <key>            Storage account key (omit for automatic credential detection)
   -c, --concurrency <n>      Max parallel chunk downloads [default: min(CPU * 4, 32)]
   -s, --chunk-size <mb>      Max chunk size in MB (cap) [default: 256]
   --WaitForDownload          Download all chunks before assembling (disables streaming assembly)
@@ -58,7 +58,7 @@ Options:
 
 ### Examples
 
-Download a blob to the current directory using DefaultAzureCredential:
+Download a blob to the current directory (uses DefaultAzureCredential, falling back to interactive browser login):
 
 ```bash
 dotnet run --project src/Fetch.Cli -- "https://myaccount.blob.core.windows.net/mycontainer/largefile.zip"
@@ -107,6 +107,15 @@ uris=(
 )
 fetch "${uris[@]}" -o ~/downloads
 ```
+
+### Authentication
+
+When no `-k` storage account key is provided, Fetch tries the following credential methods in order:
+
+1. **DefaultAzureCredential** — environment variables, managed identity, Visual Studio, Azure CLI, Azure PowerShell, and Azure Developer CLI
+2. **Interactive browser login** — opens a browser window for Azure sign-in (2-minute timeout)
+
+If all methods fail (or the browser login times out), the download exits with an error.
 
 ### Chunking Strategy
 
