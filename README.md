@@ -126,6 +126,7 @@ For example, a 4 GB file with 16 threads produces 16 chunks of 256 MB each. A 16
 ### Hidden Chunk Files
 
 By default, chunk files and the download manifest are hidden:
+
 - Filenames are dot-prefixed (e.g., `.largefile.zip.000001`, `.largefile.zip.fetch-manifest.json`)
 - On Windows, the `Hidden` file attribute is also set
 
