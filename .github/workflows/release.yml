@@ -53,16 +53,18 @@ jobs:
           NFPM_BINARY: artifacts/fetch-linux-amd64
         run: |
           mkdir -p artifacts
-          nfpm package --packager deb --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.deb
-          nfpm package --packager rpm --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.rpm
+          envsubst < packaging/nfpm.yaml > /tmp/nfpm.yaml
+          nfpm package --packager deb --config /tmp/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.deb
+          nfpm package --packager rpm --config /tmp/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.rpm
 
       - name: Package linux-arm64
         env:
           NFPM_ARCH: arm64
           NFPM_BINARY: artifacts/fetch-linux-arm64
         run: |
-          nfpm package --packager deb --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.deb
-          nfpm package --packager rpm --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.rpm
+          envsubst < packaging/nfpm.yaml > /tmp/nfpm.yaml
+          nfpm package --packager deb --config /tmp/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.deb
+          nfpm package --packager rpm --config /tmp/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.rpm
 
       - name: Create GitHub Release
         run: |
