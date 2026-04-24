@@ -43,11 +43,9 @@ jobs:
 
       - name: Install nfpm
         run: |
-          sudo mkdir -p /usr/share/keyrings
-          curl -fsSL https://repo.goreleaser.com/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/goreleaser-archive-keyring.gpg
-          echo 'deb [signed-by=/usr/share/keyrings/goreleaser-archive-keyring.gpg] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
-          sudo apt-get update -q
-          sudo apt-get install -y nfpm
+          NFPM_VERSION=$(curl -fsSL https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r .tag_name | sed 's/v//')
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" | tar -xz nfpm
+          sudo mv nfpm /usr/local/bin/
 
       - name: Package linux-amd64
         env:
