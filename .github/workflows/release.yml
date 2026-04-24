@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     env:
       VERSION: 1.${{ github.run_number }}.0
     steps:
@@ -24,30 +24,152 @@ jobs:
 
       - run: dotnet test Fetch.slnx -c Release
 
-      - run: dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r win-x64 -o publish
+      - name: Publish all targets
+        run: |
+          dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r win-x64    -o publish/win-x64
+          dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r linux-x64  -o publish/linux-x64
+          dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r linux-arm64 -o publish/linux-arm64
+          dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r osx-x64    -o publish/osx-x64
+          dotnet publish src/Fetch.Cli/Fetch.Cli.csproj -c Release -r osx-arm64  -o publish/osx-arm64
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts
+          cp publish/win-x64/fetch.exe    artifacts/fetch-windows-amd64.exe
+          cp publish/linux-x64/fetch      artifacts/fetch-linux-amd64
+          cp publish/linux-arm64/fetch    artifacts/fetch-linux-arm64
+          cp publish/osx-x64/fetch        artifacts/fetch-darwin-amd64
+          cp publish/osx-arm64/fetch      artifacts/fetch-darwin-arm64
+
+      - name: Install nfpm
+        run: |
+          sudo mkdir -p /usr/share/keyrings
+          curl -fsSL https://repo.goreleaser.com/apt/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/goreleaser-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/goreleaser-archive-keyring.gpg] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update -q
+          sudo apt-get install -y nfpm
+
+      - name: Package linux-amd64
+        env:
+          NFPM_ARCH: amd64
+          NFPM_BINARY: artifacts/fetch-linux-amd64
+        run: |
+          mkdir -p artifacts
+          nfpm package --packager deb --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.deb
+          nfpm package --packager rpm --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_amd64.rpm
+
+      - name: Package linux-arm64
+        env:
+          NFPM_ARCH: arm64
+          NFPM_BINARY: artifacts/fetch-linux-arm64
+        run: |
+          nfpm package --packager deb --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.deb
+          nfpm package --packager rpm --config packaging/nfpm.yaml --target artifacts/fetch_${VERSION}_linux_arm64.rpm
 
       - name: Create GitHub Release
-        shell: bash
         run: |
           tag="v$VERSION"
+          files=(
+            artifacts/fetch-windows-amd64.exe
+            artifacts/fetch-linux-amd64
+            artifacts/fetch-linux-arm64
+            artifacts/fetch-darwin-amd64
+            artifacts/fetch-darwin-arm64
+            artifacts/fetch_${VERSION}_linux_amd64.deb
+            artifacts/fetch_${VERSION}_linux_arm64.deb
+            artifacts/fetch_${VERSION}_linux_amd64.rpm
+            artifacts/fetch_${VERSION}_linux_arm64.rpm
+          )
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" publish/fetch.exe --clobber
+            gh release upload "$tag" "${files[@]}" --clobber
             gh release edit "$tag" --title "Release $tag" --generate-notes
           else
-            gh release create "$tag" publish/fetch.exe --title "Release $tag" --generate-notes
+            gh release create "$tag" "${files[@]}" --title "Release $tag" --generate-notes
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Cloudsmith CLI
+        run: pip install --upgrade cloudsmith-cli
+
+      - name: Push to Cloudsmith apt
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          cloudsmith push deb mattwhitwam/fetch-apt/any-distro/any-version artifacts/fetch_${VERSION}_linux_amd64.deb
+          cloudsmith push deb mattwhitwam/fetch-apt/any-distro/any-version artifacts/fetch_${VERSION}_linux_arm64.deb
+
+      - name: Push to Cloudsmith yum
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          cloudsmith push rpm mattwhitwam/fetch-yum/any-distro/any-version artifacts/fetch_${VERSION}_linux_amd64.rpm
+          cloudsmith push rpm mattwhitwam/fetch-yum/any-distro/any-version artifacts/fetch_${VERSION}_linux_arm64.rpm
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          SHA_X64=$(sha256sum artifacts/fetch-darwin-amd64 | awk '{print $1}')
+          SHA_ARM64=$(sha256sum artifacts/fetch-darwin-arm64 | awk '{print $1}')
+
+          cat > fetch.rb <<EOF
+          class Fetch < Formula
+            desc "Parallel, chunked, resumable downloads from Azure Blob Storage"
+            homepage "https://github.com/matt-dx/fetch"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/matt-dx/fetch/releases/download/v${VERSION}/fetch-darwin-amd64"
+                sha256 "${SHA_X64}"
+              end
+
+              on_arm do
+                url "https://github.com/matt-dx/fetch/releases/download/v${VERSION}/fetch-darwin-arm64"
+                sha256 "${SHA_ARM64}"
+              end
+            end
+
+            def install
+              if Hardware::CPU.intel?
+                bin.install "fetch-darwin-amd64" => "fetch"
+              else
+                bin.install "fetch-darwin-arm64" => "fetch"
+              end
+            end
+
+            test do
+              system "#{bin}/fetch", "--help"
+            end
+          end
+          EOF
+
+          git clone https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/matt-dx/homebrew-fetch.git tap-repo
+          mkdir -p tap-repo/Formula
+          cp fetch.rb tap-repo/Formula/fetch.rb
+          cd tap-repo
+          git config user.email "action@github.com"
+          git config user.name "GitHub Actions"
+          git add Formula/fetch.rb
+          if git diff --cached --quiet; then
+            echo "No changes to Homebrew formula; skipping commit and push."
+          else
+            git commit -m "Update fetch to ${VERSION}"
+            git push
+          fi
+
       - name: Submit winget manifest
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $id      = "MattWhitwam.Fetch"
           $version = $env:VERSION
           $branch  = "add-$id-$version"
-          $exeUrl  = "https://github.com/matt-dx/fetch/releases/download/v$version/fetch.exe"
-          $sha256  = (Get-FileHash publish/fetch.exe -Algorithm SHA256).Hash.ToLower()
+          $exeUrl  = "https://github.com/matt-dx/fetch/releases/download/v$version/fetch-windows-amd64.exe"
+          $sha256  = (Get-FileHash artifacts/fetch-windows-amd64.exe -Algorithm SHA256).Hash.ToLower()
 
           gh repo fork microsoft/winget-pkgs --clone=false
           $ghUser   = gh api user --jq '.login'

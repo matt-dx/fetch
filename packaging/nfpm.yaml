@@ -1,0 +1,14 @@
+name: fetch
+arch: "${NFPM_ARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: "Matt Whitwam <matthew.whitwam@dealx.com>"
+description: "Parallel, chunked, resumable downloads from Azure Blob Storage."
+homepage: "https://github.com/matt-dx/fetch"
+license: MIT
+
+contents:
+  - src: "${NFPM_BINARY}"
+    dst: /usr/local/bin/fetch
+    file_info:
+      mode: 0755
