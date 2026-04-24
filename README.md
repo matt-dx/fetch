@@ -24,6 +24,35 @@ A .NET 9 console application that downloads large files from Azure Blob Storage 
 - An Azure Blob Storage account with a blob to download
 - Authentication: a storage account key, credentials configured for [DefaultAzureCredential](https://learn.microsoft.com/en-us/dotnet/azure/sdk/authentication/), or interactive browser login
 
+## Installation
+
+### Windows (winget)
+
+```powershell
+winget install MattWhitwam.Fetch
+```
+
+### macOS (Homebrew)
+
+```bash
+brew tap matt-dx/fetch
+brew install fetch
+```
+
+### Debian / Ubuntu (apt)
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/mattwhitwam/fetch-apt/setup.deb.sh' | sudo -E bash
+sudo apt install fetch
+```
+
+### RHEL / Fedora / Amazon Linux (yum/dnf)
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/mattwhitwam/fetch-yum/setup.rpm.sh' | sudo -E bash
+sudo yum install fetch
+```
+
 ## Building
 
 ```bash
