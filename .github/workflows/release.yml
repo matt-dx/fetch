@@ -204,6 +204,8 @@ jobs:
             "  InstallerType: portable",
             "  InstallerUrl: $exeUrl",
             "  InstallerSha256: $sha256",
+            "  Commands:",
+            "  - fetch",
             "ManifestType: installer",
             "ManifestVersion: 1.9.0"
           ) -join "`n") | Set-Content "$pkgDir/$id.installer.yaml" -Encoding UTF8
