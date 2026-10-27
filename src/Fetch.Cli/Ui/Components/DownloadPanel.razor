@@ -22,6 +22,12 @@
         var pct = Progress.DownloadProgress >= 1.0 ? 100.0 : Math.Floor(raw * 10) / 10;
         return $"{pct,5:F1}%";
     }
+
+    private static string FormatEta(TimeSpan eta)
+    {
+        var days = eta.Days > 0 ? $"{eta.Days}d " : "";
+        return $"{days}{eta:hh\\:mm\\:ss}";
+    }
 }
 
 @{
@@ -56,7 +62,7 @@
         <Panel Border="BoxBorder.None" Width="20">
             <Rows>
                 <Markup Content="@($"Chunks: {Progress.CompletedChunks}/{Progress.TotalChunks}")" />
-                <Markup Content="@($"ETA: {eta:hh\\:mm\\:ss}")" />
+                <Markup Content="@($"ETA: {FormatEta(eta)}")" />
             </Rows>
         </Panel>
     </Columns>
